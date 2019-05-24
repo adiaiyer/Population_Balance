@@ -1,0 +1,4 @@
+ System Parameters used in this simulation
+number of timesteps,nx,ny,nz =   020000  150150005
+dt,dx,dy,dz 0.001 0.006 0.006 0.005
+Surface tension , Oh_ratio, dmax , kb  0.000  0.700  0.000  0.100

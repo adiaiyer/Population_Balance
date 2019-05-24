@@ -1,0 +1,15 @@
+#!/bin/bash
+#
+#SBATCH --job-name=post_proc
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=6
+#SBATCH --partition=debug
+#SBATCH --time=1:00:00
+#SBATCH --mem=29000MB
+#SBATCH --mail-type=all
+#SBATCH --mail-user=aaiyer1@jhu.edu
+#SBATCH --account=cmeneve1
+./a.out
+#Copy this file before it is overwritten
+cp post1.out post1.out.$PBS_JOBID
+

@@ -1,0 +1,20 @@
+#!/bin/bash
+#
+#SBATCH --job-name=jet_pbekb1
+#SBATCH --output=hello.out
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --partition=shared
+#SBATCH --time=3:00:00
+#SBATCH --mem=48000MB
+#SBATCH --mail-type=all
+#SBATCH --mail-user=aaiyer1@jhu.edu
+#SBATCH --account=cmeneve1
+
+#gfortran extract_vel_contours.f90
+gfortran post_proc_vel.f90
+./a.out |&tee output
+
+#Copy this file before it is overwritten
+cp hello.out hello.out.$PBS_JOBID
+

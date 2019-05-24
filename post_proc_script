@@ -1,0 +1,14 @@
+#!/bin/bash
+#
+#SBATCH --job-name=test_proc
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=8
+#SBATCH --partition=lrgmem
+#SBATCH --time=14:00:0
+#SBATCH --mail-type=all
+#SBATCH --mem-per-cpu=4900MB
+#SBATCH --mail-user=aaiyer1@jhu.edu
+#SBATCH --account=cmeneve1
+./a.out
+
+

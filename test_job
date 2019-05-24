@@ -1,0 +1,18 @@
+#!/bin/bash
+#
+#SBATCH --job-name=jet_pbe_test
+#SBATCH --output=lesgo.out
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=24
+#SBATCH --partition=debug
+#SBATCH --time=2:00:00
+#SBATCH --mem=48000MB
+#SBATCH --mail-type=all
+#SBATCH --mail-user=aaiyer1@jhu.edu
+#SBATCH --account=cmeneve1
+
+mpirun ./lesgo-mpi
+
+#Copy this file before it is overwritten
+cp lesgo.out lesgo.out.$PBS_JOBID
+
