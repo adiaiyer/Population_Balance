@@ -35,7 +35,7 @@ if(OCEAN_FLAG) then
    if(coord.eq.0) then
       do jy=1,ny
          do jx=1,nx
-            txz(jx,jy,1)=1. !DY Everything has been normalized by u_star
+            txz(jx,jy,1)=0. !DY Everything has been normalized by u_star
             tyz(jx,jy,1)=0.
 !!            if(abs(Nu_t(jx,jy,1)).lt.1.e-10) then
 !!!               print*, "Zero value of Nu_t for BC: in subroutine wallstress!"
@@ -51,7 +51,7 @@ if(OCEAN_FLAG) then
 !!$            else
 !!$               dudz(jx,jy,1)=-txz(jx,jy,1)/nu_sgs
 !!$            endif
-            dudz(jx,jy,1)=dudz(jx,jy,2)
+            dudz(jx,jy,1)=0.
             dvdz(jx,jy,1)=0.
          enddo
       enddo

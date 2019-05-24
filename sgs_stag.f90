@@ -367,7 +367,7 @@ if(OCEAN_FLAG.and.SEABED_FLAG) then
       call test_filter(u1,G_test)
       call test_filter(v1,G_test)
       denom=log(0.5_rprec*dz/zo_seabed)
-      u_avg=sqrt(u1(1:nx,1:ny)**2+v1(1:nx,1:ny)**2)
+      u_avg=max(sqrt(u1(1:nx,1:ny)**2+v1(1:nx,1:ny)**2),1.e-20)
       ustar_avg=u_avg*vonk/denom
       do jy=1,ny
          do jx=1,nx

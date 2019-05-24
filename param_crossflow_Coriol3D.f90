@@ -90,7 +90,7 @@ real(rprec),parameter::ug_dim=8._rprec,vg_dim=0._rprec
 !                       ug=u_star/u_star,vg=0._rprec/u_star
 
 ! u_star=0.45 if coriolis_forcing=.FALSE. and =ug if coriolis_forcing=.TRUE.
-real(rprec),parameter::u_star=0.00006125_rprec,Pr=0.4_rprec
+real(rprec),parameter::u_star=1._rprec,Pr=0.4_rprec
 !real(rprec),parameter::u_star=sqrt(ug_dim**2+vg_dim**2),Pr=.4_rprec
 
 !!!!!!! Changed by AA
