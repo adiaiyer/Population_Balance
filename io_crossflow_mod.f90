@@ -2418,6 +2418,1388 @@ end do
 spec(:)=spec(:)/real(Ny,kind=rprec) ! for average over Ny
 end subroutine spectrum
 
+
+!*******************************************************************************
+subroutine tavg_init()
+!*******************************************************************************
+!
+!  This subroutine loads the tavg.out files
+!
+use messages
+use param, only : read_endian
+use param, only : tavg, tavg_total_time, tavg_dt, tavg_initialized
+
+implicit none
+
+character (*), parameter :: ftavg_in = path // 'tavg.out'
+if PPOUTPUT_SGS
+character (*), parameter :: ftavg_sgs_in = path // 'tavg_sgs.out'
+endif
+if PPOUTPUT_BUDGET
+character (*), parameter :: ftavg_budget_in = path // 'tavg_budget.out'
+endif
+$if $MPI
+character (*), parameter :: MPI_suffix = '.c'
+$endif
+character (128) :: fname
+logical :: exst
+
+fname = ftavg_in
+$if (MPI)
+call string_concat( fname, MPI_suffix, coord )
+$endif
+
+inquire (file=fname, exist=exst)
+if (.not. exst) then
+    !  Nothing to read in
+    if (coord == 0) then
+        write(*,*) ' '
+        write(*,*)'No previous time averaged data - starting from scratch.'
+    end if
+    $! note: tavg was already initialized to zero in output_init routine
+    tavg_total_time = 0._rprec
+else
+    open(1, file=fname, action='read', position='rewind', form='unformatted',  &
+        convert=read_endian)
+    read(1) tavg_total_time
+    read(1) tavg
+    close(1)
+    if PPOUTPUT_SGS
+        fname = ftavg_sgs_in
+        $if $MPI
+            call string_concat( fname, MPI_suffix, coord )
+        $endif
+        open(1, file=fname, action='read', position='rewind', form='unformatted',  &
+        convert=read_endian)
+        read(1) tavg_total_time
+        read(1) tavg_sgs
+        close(1)
+    endif
+
+    if PPOUTPUT_BUDGET
+        fname = ftavg_budget_in
+        $if $MPI
+        call string_concat( fname, MPI_suffix, coord )
+        $endif
+        open(1, file=fname, action='read', position='rewind', form='unformatted',  &
+        convert=read_endian)
+        read(1) tavg_total_time
+        read(1) tavg_budget
+        close(1)
+    endif
+end if
+
+! Initialize tavg_dt
+tavg_dt = 0._rprec
+
+! Set global switch that tavg as been initialized
+tavg_initialized = .true.
+
+if( tavg_calc ) then
+
+    allocate(tavg(nx,ny,lbz:nz))
+    allocate(tavg_zplane(nz))
+if PPOUTPUT_SGS
+    allocate(tavg_sgs(nx,ny,lbz:nz))
+endif
+if PPOUTPUT_BUDGET
+    allocate(tavg_budget(nx,ny,lbz:nz))
+endif
+
+  ! Initialize the derived types tavg and tavg_zplane
+    do k = 1, Nz
+        do j = 1, Ny
+        do i = 1, Nx
+            tavg(i,j,k) % u    = 0._rprec
+            tavg(i,j,k) % v    = 0._rprec
+            tavg(i,j,k) % w_uv = 0._rprec
+            tavg(i,j,k) % u_w  = 0._rprec
+            tavg(i,j,k) % v_w  = 0._rprec
+            tavg(i,j,k) % w    = 0._rprec
+            tavg(i,j,k) % u2   = 0._rprec
+            tavg(i,j,k) % v2   = 0._rprec
+            tavg(i,j,k) % w2   = 0._rprec
+            tavg(i,j,k) % uv   = 0._rprec
+            tavg(i,j,k) % uw   = 0._rprec
+            tavg(i,j,k) % vw   = 0._rprec
+            tavg(i,j,k) % txx  = 0._rprec
+            tavg(i,j,k) % tyy  = 0._rprec
+            tavg(i,j,k) % tzz  = 0._rprec
+            tavg(i,j,k) % txy  = 0._rprec
+            tavg(i,j,k) % txz  = 0._rprec
+            tavg(i,j,k) % tyz  = 0._rprec
+            tavg(i,j,k) % fx   = 0._rprec
+            tavg(i,j,k) % fy   = 0._rprec
+            tavg(i,j,k) % fz   = 0._rprec
+            !tavg(i,j,k) % dudx = 0._rprec
+            !tavg(i,j,k) % dudy = 0._rprec
+            !tavg(i,j,k) % dudz = 0._rprec
+            !tavg(i,j,k) % dvdx = 0._rprec
+            !tavg(i,j,k) % dvdy = 0._rprec
+            !tavg(i,j,k) % dvdz = 0._rprec
+            !tavg(i,j,k) % dwdx = 0._rprec
+            !tavg(i,j,k) % dwdy = 0._rprec
+            !tavg(i,j,k) % dwdz = 0._rprec
+
+        end do
+        end do
+        ! type_set removed, is tavg_zplane even used?
+        ! to replace commented line below, set all types of tavg_zplane = 0._rprec
+        ! call type_set( tavg_zplane(k), 0._rprec )
+    end do
+end subroutine tavg_init
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+subroutine tavg_compute()
+
+
+!! This subroutine collects statistics for each flow variable.
+
+use param, only : nx,ny,nz,lbz,jzmax,ubc_mom,lbc_mom
+use sim_param, only : u, v, w, p
+use sim_param, only : txx, txy, tyy, txz, tyz, tzz
+use sim_param, only : dudx, dudy, dudz, dvdx, dvdy, dvdz, dwdx, dwdy, dwdz
+
+implicit none
+
+integer :: i, j, k
+real(rprec) :: u_p, u_p2, v_p, v_p2, w_p, w_p2
+real(rprec), allocatable, dimension(:,:,:) :: w_uv, u_w, v_w
+real(rprec), allocatable, dimension(:,:,:) :: pres_real
+real(rprec), allocatable, dimension(:,:,:) :: dwdx_uv, dwdy_uv, dudz_uv, dvdz_uv
+
+allocate(w_uv(nx,ny,lbz:nz), u_w(nx,ny,lbz:nz), v_w(nx,ny,lbz:nz))
+allocate(pres_real(nx,ny,lbz:nz))
+allocate( dwdx_uv(nx,ny,lbz:nz), dwdy_uv(nx,ny,lbz:nz), &
+            dudz_uv(nx,ny,lbz:nz), dvdz_uv(nx,ny,lbz:nz) )
+
+ w_uv(1:nx,1:ny,lbz:nz) = interp_to_uv_grid(w(1:nx,1:ny,lbz:nz), lbz )
+ u_w(1:nx,1:ny,lbz:nz) = interp_to_w_grid(u(1:nx,1:ny,lbz:nz), lbz )
+ v_w(1:nx,1:ny,lbz:nz) = interp_to_w_grid(v(1:nx,1:ny,lbz:nz), lbz )
+
+ pres_real(1:nx,1:ny,lbz:nz) = 0._rprec
+ pres_real(1:nx,1:ny,lbz:nz) = p(1:nx,1:ny,lbz:nz)                              &
+             - 0.5 * ( u(1:nx,1:ny,lbz:nz)**2 + w_uv(1:nx,1:ny,lbz:nz)**2               &
+                 + v(1:nx,1:ny,lbz:nz)**2 )
+
+
+dwdx_uv(1:nx,1:ny,lbz:nz) = interp_to_uv_grid(dwdx(1:nx,1:ny,lbz:nz), lbz )
+dwdy_uv(1:nx,1:ny,lbz:nz) = interp_to_uv_grid(dwdy(1:nx,1:ny,lbz:nz), lbz )
+dudz_uv(1:nx,1:ny,lbz:nz) = interp_to_uv_grid(dudz(1:nx,1:ny,lbz:nz), lbz )
+dvdz_uv(1:nx,1:ny,lbz:nz) = interp_to_uv_grid(dvdz(1:nx,1:ny,lbz:nz), lbz )
+
+
+! note: u_w not necessarily zero on walls, but only mult by w=0 vu u'w', so OK
+! can zero u_w at BC anyway:
+if(coord==0       .and. lbc_mom>0) u_w(:,:,1)  = 0._rprec
+if(coord==nproc-1 .and. ubc_mom>0) u_w(:,:,nz) = 0._rprec
+if(coord==0       .and. lbc_mom>0) v_w(:,:,1)  = 0._rprec
+if(coord==nproc-1 .and. ubc_mom>0) v_w(:,:,nz) = 0._rprec
+
+! Begin time-averaging
+do k = lbz, jzmax     ! lbz = 0 for mpi runs, otherwise lbz = 1
+do j = 1, ny
+do i = 1, nx
+    u_p = u(i,j,k)       !! uv grid
+    u_p2= u_w(i,j,k)     !! w grid
+    v_p = v(i,j,k)       !! uv grid
+    v_p2= v_w(i,j,k)     !! w grid
+    w_p = w(i,j,k)       !! w grid
+    w_p2= w_uv(i,j,k)    !! uv grid
+
+    tavg(i,j,k) % u = tavg(i,j,k) % u + u_p * tavg_dt !! uv grid
+    tavg(i,j,k) % v = tavg(i,j,k) % v + v_p * tavg_dt !! uv grid
+    tavg(i,j,k) % w_uv = tavg(i,j,k) % w_uv + w_p2 * tavg_dt !! uv grid
+    tavg(i,j,k) % u_w = tavg(i,j,k) % u_w + u_p2 * tavg_dt !! w grid
+    tavg(i,j,k) % v_w = tavg(i,j,k) % v_w + v_p2 * tavg_dt !! w grid
+    tavg(i,j,k) % w = tavg(i,j,k) % w + w_p * tavg_dt !! w grid
+
+    ! Note: compute u'w' on w-grid because stresses on w-grid --pj
+    tavg(i,j,k) % u2 = tavg(i,j,k) % u2 + u_p * u_p * tavg_dt !! uv grid
+    tavg(i,j,k) % v2 = tavg(i,j,k) % v2 + v_p * v_p * tavg_dt !! uv grid
+    tavg(i,j,k) % w2 = tavg(i,j,k) % w2 + w_p * w_p * tavg_dt !! w grid
+    tavg(i,j,k) % uv = tavg(i,j,k) % uv + u_p * v_p * tavg_dt !! uv grid
+    tavg(i,j,k) % uw = tavg(i,j,k) % uw + u_p2 * w_p * tavg_dt !! w grid
+    tavg(i,j,k) % vw = tavg(i,j,k) % vw + v_p2 * w_p * tavg_dt !! w grid
+
+    tavg(i,j,k) % txx = tavg(i,j,k) % txx + txx(i,j,k) * tavg_dt !! uv grid
+    tavg(i,j,k) % tyy = tavg(i,j,k) % tyy + tyy(i,j,k) * tavg_dt !! uv grid
+    tavg(i,j,k) % tzz = tavg(i,j,k) % tzz + tzz(i,j,k) * tavg_dt !! uv grid
+    tavg(i,j,k) % txy = tavg(i,j,k) % txy + txy(i,j,k) * tavg_dt !! uv grid
+    tavg(i,j,k) % txz = tavg(i,j,k) % txz + txz(i,j,k) * tavg_dt !! w grid
+    tavg(i,j,k) % tyz = tavg(i,j,k) % tyz + tyz(i,j,k) * tavg_dt !! w grid
+
+    tavg(i,j,k) % p = tavg(i,j,k) % p + pres_real(i,j,k) * tavg_dt !! uv grid
+
+    tavg(i,j,k) % dudx = tavg(i,j,k) % dudx + dudx(i,j,k)    * tavg_dt
+    tavg(i,j,k) % dudy = tavg(i,j,k) % dudy + dudy(i,j,k)    * tavg_dt
+    tavg(i,j,k) % dudz = tavg(i,j,k) % dudz + dudz_uv(i,j,k) * tavg_dt
+    tavg(i,j,k) % dvdx = tavg(i,j,k) % dvdx + dvdx(i,j,k)    * tavg_dt
+    tavg(i,j,k) % dvdy = tavg(i,j,k) % dvdy + dvdy(i,j,k)    * tavg_dt
+    tavg(i,j,k) % dvdz = tavg(i,j,k) % dvdz + dvdz_uv(i,j,k) * tavg_dt
+    tavg(i,j,k) % dwdx = tavg(i,j,k) % dwdx + dwdx_uv(i,j,k) * tavg_dt
+    tavg(i,j,k) % dwdy = tavg(i,j,k) % dwdy + dwdy_uv(i,j,k) * tavg_dt
+    tavg(i,j,k) % dwdz = tavg(i,j,k) % dwdz + dwdz(i,j,k)    * tavg_dt
+
+end do
+end do
+end do
+! Update tavg_total_time for variable time stepping
+tavg_total_time = tavg_total_time + tavg_dt
+
+! Set tavg_dt back to zero for next increment
+tavg_dt = 0._rprec
+
+end subroutine tavg_compute
+
+
+
+
+
+subroutine tavg_budget_compute
+!*******************************************************************************
+!
+! Computes terms that are used for budgets and time-averages accordingly.
+! All quantities used in the averaging are moved to the w-grid.
+!
+! Has not been tested on MARCC, without MPI, or for full channel configuration.
+!
+! Assumes no-slip applies even for LES.
+! 
+
+use stat_defs, only : tavg_dt, tavg_budget
+use param, only : nx, ny, nz, lbz, jzmax, lbc_mom, ubc_mom
+use sim_param, only : u, v, w, p
+use sim_param, only : dudx, dudy, dudz, dvdx, dvdy, dvdz, dwdx, dwdy, dwdz
+use sim_param, only : dpdx, dpdy, dpdz
+use sim_param, only : divtx, divty, divtz
+use functions, only : interp_to_w_grid
+use mpi_defs, only: mpi_sync_real_array, MPI_SYNC_DOWNUP
+
+implicit none
+
+integer :: i, j, k
+real(rprec) :: u_p, v_p, w_p, p_p
+real(rprec) :: dpdx_p, dpdy_p, dpdz_p
+real(rprec) :: dudx_p, dudy_p, dudz_p, dvdx_p, dvdy_p, dvdz_p
+real(rprec) :: dwdx_p, dwdy_p, dwdz_p, divtx_p, divty_p, divtz_p
+real(rprec), allocatable, dimension(:,:,:) :: u_w, v_w, p_w
+real(rprec), allocatable, dimension(:,:,:) :: dudx_w, dudy_w, dvdx_w, dvdy_w
+real(rprec), allocatable, dimension(:,:,:) :: dwdz_w, divtx_w, divty_w
+real(rprec), allocatable, dimension(:,:,:) :: pres_real
+real(rprec), allocatable, dimension(:,:,:) :: dpdx_real, dpdy_real, dpdz_real
+
+allocate(u_w(nx,ny,lbz:nz), v_w(nx,ny,lbz:nz), p_w(nx,ny,lbz:nz))
+allocate(dudx_w(nx,ny,lbz:nz), dudy_w(nx,ny,lbz:nz), dvdx_w(nx,ny,lbz:nz))
+allocate(dvdy_w(nx,ny,lbz:nz), dwdz_w(nx,ny,lbz:nz))
+allocate(divtx_w(nx,ny,lbz:nz), divty_w(nx,ny,lbz:nz))
+allocate(pres_real(nx,ny,lbz:nz))
+allocate(dpdx_real(nx,ny,lbz:nz), dpdy_real(nx,ny,lbz:nz), dpdz_real(nx,ny,lbz:nz))
+
+! Prepare variables that need to be interpolated onto the w-grid
+$if (MPI)
+! Remove BOGUS values at processor interfaces
+call mpi_sync_real_array( p, lbz, MPI_SYNC_DOWNUP )
+
+call mpi_sync_real_array( divtx, lbz, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( divty, lbz, MPI_SYNC_DOWNUP )
+
+! Remove BOGUS value within boundary conditions as well
+if (coord == 0) then 
+    u(:,:,lbz) = 0._rprec
+    v(:,:,lbz) = 0._rprec
+    dwdz(:,:,lbz) = 0._rprec
+    divtx(:,:,lbz) = 0._rprec
+    divty(:,:,lbz) = 0._rprec
+end if
+if (coord == nproc-1) then
+    dwdz(:,:,nz) = 0._rprec
+    divtx(:,:,nz) = 0._rprec
+    divty(:,:,nz) = 0._rprec
+end if
+$endif
+
+! Now interpolate variables to the w-grid
+u_w(1:nx,1:ny,lbz:nz) = interp_to_w_grid(u(1:nx,1:ny,lbz:nz), lbz )
+v_w(1:nx,1:ny,lbz:nz) = interp_to_w_grid(v(1:nx,1:ny,lbz:nz), lbz )
+p_w(1:nx,1:ny,lbz:nz) = interp_to_w_grid(p(1:nx,1:ny,lbz:nz), lbz)
+
+dudx_w(1:nx,1:ny,lbz:nz) = interp_to_w_grid(dudx(1:nx,1:ny,lbz:nz), lbz )
+dudy_w(1:nx,1:ny,lbz:nz) = interp_to_w_grid(dudy(1:nx,1:ny,lbz:nz), lbz )
+dvdx_w(1:nx,1:ny,lbz:nz) = interp_to_w_grid(dvdx(1:nx,1:ny,lbz:nz), lbz )
+dvdy_w(1:nx,1:ny,lbz:nz) = interp_to_w_grid(dvdy(1:nx,1:ny,lbz:nz), lbz )
+dwdz_w(1:nx,1:ny,lbz:nz) = interp_to_w_grid(dwdz(1:nx,1:ny,lbz:nz), lbz )
+
+divtx_w(1:nx,1:ny,lbz:nz) = interp_to_w_grid(divtx(1:nx,1:ny,lbz:nz), lbz)
+divty_w(1:nx,1:ny,lbz:nz) = interp_to_w_grid(divty(1:nx,1:ny,lbz:nz), lbz)
+
+! Remove energy from dynamic simulation pressure for static pressure
+! This is different than in tavg_compute since on w-grid
+pres_real(1:nx,1:ny,lbz:nz) = 0._rprec
+pres_real(1:nx,1:ny,lbz:nz) = p_w(1:nx,1:ny,lbz:nz)                            &
+    - 0.5 * ( u_w(1:nx,1:ny,lbz:nz)**2 + v_w(1:nx,1:ny,lbz:nz)**2              &
+    + w(1:nx,1:ny,lbz:nz)**2 )
+
+! dpdx and dpdy are treated differently since the 0 index is empty 
+! and the nz index is BOGUS
+! Initialize dpdx_real and dpdy_real from dpdx and dpdy
+! BOGUS values of dpdx_real and dpdy_real are removed
+! on the uv grid then brought over
+! to the w grid
+dpdx_real(1:nx,1:ny,1:nz) = dpdx(1:nx,1:ny,1:nz)
+dpdy_real(1:nx,1:ny,1:nz) = dpdy(1:nx,1:ny,1:nz)
+
+! Remove BOGUS value above ubc_mom
+if (coord == nproc - 1) then
+    dpdx_real(:,:,nz) = 0._rprec
+    dpdy_real(:,:,nz) = 0._rprec
+end if
+
+$if ($MPI)
+! Fill empty 0 index to be overwritten
+dpdx_real(1:nx,1:ny,0) = 0._rprec
+dpdy_real(1:nx,1:ny,0) = 0._rprec
+
+! Remove intermediate BOGUS values (at nz) and zeros (at 0 index)
+call mpi_sync_real_array( dpdx_real, lbz, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( dpdy_real, lbz, MPI_SYNC_DOWNUP )
+$endif
+
+! Now bring dpdx_real and dpdy_real actually onto the w grid
+dpdx_real(1:nx,1:ny,lbz:nz) = interp_to_w_grid(dpdx_real(1:nx,1:ny,lbz:nz), lbz)
+dpdy_real(1:nx,1:ny,lbz:nz) = interp_to_w_grid(dpdy_real(1:nx,1:ny,lbz:nz), lbz)
+
+! Extract energy from pressure
+dpdx_real(1:nx,1:ny,lbz:nz) = dpdx_real(1:nx,1:ny,lbz:nz)                      &
+    - ( u_w(1:nx,1:ny,lbz:nz)*dudx_w(1:nx,1:ny,lbz:nz)                         &
+    + v_w(1:nx,1:ny,lbz:nz)*dvdx_w(1:nx,1:ny,lbz:nz)                           &
+    + w(1:nx,1:ny,lbz:nz)*dwdx(1:nx,1:ny,lbz:nz) )
+
+dpdy_real(1:nx,1:ny,lbz:nz) = dpdy_real(1:nx,1:ny,lbz:nz)                      &
+    - ( u_w(1:nx,1:ny,lbz:nz)*dudy_w(1:nx,1:ny,lbz:nz)                         &
+    + v_w(1:nx,1:ny,lbz:nz)*dvdy_w(1:nx,1:ny,lbz:nz)                           &
+    + w(1:nx,1:ny,lbz:nz)*dwdy(1:nx,1:ny,lbz:nz) )
+
+! dpdx and dpdy were already interpolated, still need to consider dpdz_real
+dpdz_real(1:nx,1:ny,1:nz) = dpdz(1:nx,1:ny,1:nz)
+
+$if $MPI
+dpdz_real(1:nx,1:ny,0) = dpdz(1:nx,1:ny,1)
+
+! Remove intermediate BOGUS values (at nz) and zeros (at 0 index)
+call mpi_sync_real_array( dpdz_real, lbz, MPI_SYNC_DOWNUP )
+$endif
+
+! Extract energy from pressure
+dpdz_real(1:nx,1:ny,lbz:nz) = dpdz_real(1:nx,1:ny,lbz:nz)                      &
+    - ( u_w(1:nx,1:ny,lbz:nz)*dudz(1:nx,1:ny,lbz:nz)                           &
+    + v_w(1:nx,1:ny,lbz:nz)*dvdz(1:nx,1:ny,lbz:nz)                             &
+    + w(1:nx,1:ny,lbz:nz)*dwdz_w(1:nx,1:ny,lbz:nz) )
+
+! Enforce no penetration and no-slip
+if (coord == 0 .and. lbc_mom > 0) then
+    ! No-slip
+    u_w(:,:,1) = 0._rprec
+    v_w(:,:,1) = 0._rprec
+    dudx(:,:,1) = 0._rprec
+    dudy(:,:,1) = 0._rprec
+    dvdx(:,:,1) = 0._rprec
+    dvdy(:,:,1) = 0._rprec
+    dwdz(:,:,1) = 0._rprec
+
+    ! No penetration
+    w(:,:,1) = 0._rprec
+    dwdx(:,:,1) = 0._rprec
+    dwdy(:,:,1) = 0._rprec
+end if
+if (coord == nproc-1 .and. ubc_mom > 0) then
+    ! No-slip
+    u_w(:,:,nz) = 0._rprec
+    v_w(:,:,nz) = 0._rprec
+    dudx(:,:,nz) = 0._rprec
+    dudy(:,:,nz) = 0._rprec
+    dvdx(:,:,nz) = 0._rprec
+    dvdy(:,:,nz) = 0._rprec
+    dwdz(:,:,nz) = 0._rprec
+
+    ! No penetration
+    w(:,:,nz) = 0._rprec
+    dwdx(:,:,nz) = 0._rprec
+    dwdy(:,:,nz) = 0._rprec
+ end if
+
+! Begin time-averaging
+do k = lbz, jzmax     ! lbz = 0 for mpi runs, otherwise lbz = 1
+do j = 1, ny
+do i = 1, nx
+
+    ! Rewrite temp variables
+    u_p = u_w(i,j,k)
+    v_p = v_w(i,j,k)
+    w_p = w(i,j,k)
+    p_p = pres_real(i,j,k)
+
+    dudx_p = dudx_w(i,j,k)
+    dudy_p = dudy_w(i,j,k)
+    dudz_p = dudz(i,j,k)
+    dvdx_p = dvdx_w(i,j,k)
+    dvdy_p = dvdy_w(i,j,k)
+    dvdz_p = dvdz(i,j,k)
+    dwdx_p = dwdx(i,j,k)
+    dwdy_p = dwdy(i,j,k)
+    dwdz_p = dwdz_w(i,j,k)
+
+    dpdx_p = dpdx_real(i,j,k)
+    dpdy_p = dpdy_real(i,j,k)
+    dpdz_p = dpdz_real(i,j,k)
+
+    divtx_p = divtx_w(i,j,k)
+    divty_p = divty_w(i,j,k)
+    divtz_p = divtz(i,j,k)
+
+    ! mean pressure on w-grid
+    tavg_budget(i,j,k) % p = tavg_budget(i,j,k) % p + p_p * tavg_dt
+
+    ! mean velocity-velocity product, ui*uj, on w-grid
+    tavg_budget(i,j,k) % uu = tavg_budget(i,j,k) % uu + u_p * u_p * tavg_dt
+    tavg_budget(i,j,k) % vv = tavg_budget(i,j,k) % vv + v_p * v_p * tavg_dt
+    tavg_budget(i,j,k) % ww = tavg_budget(i,j,k) % ww + w_p * w_p * tavg_dt
+    tavg_budget(i,j,k) % uv = tavg_budget(i,j,k) % uv + u_p * v_p * tavg_dt
+    tavg_budget(i,j,k) % uw = tavg_budget(i,j,k) % uw + u_p * w_p * tavg_dt
+    tavg_budget(i,j,k) % vw = tavg_budget(i,j,k) % vw + v_p * w_p * tavg_dt
+
+    ! mean velocity gradients, duidxj
+    tavg_budget(i,j,k) % dudx = tavg_budget(i,j,k) % dudx + dudx_p * tavg_dt
+    tavg_budget(i,j,k) % dudy = tavg_budget(i,j,k) % dudy + dudy_p * tavg_dt 
+    tavg_budget(i,j,k) % dudz = tavg_budget(i,j,k) % dudz + dudz_p * tavg_dt 
+    tavg_budget(i,j,k) % dvdx = tavg_budget(i,j,k) % dvdx + dvdx_p * tavg_dt
+    tavg_budget(i,j,k) % dvdy = tavg_budget(i,j,k) % dvdy + dvdy_p * tavg_dt
+    tavg_budget(i,j,k) % dvdz = tavg_budget(i,j,k) % dvdz + dvdz_p * tavg_dt 
+    tavg_budget(i,j,k) % dwdx = tavg_budget(i,j,k) % dwdx + dwdx_p * tavg_dt 
+    tavg_budget(i,j,k) % dwdy = tavg_budget(i,j,k) % dwdy + dwdy_p * tavg_dt 
+    tavg_budget(i,j,k) % dwdz = tavg_budget(i,j,k) % dwdz + dwdz_p * tavg_dt 
+
+    ! mean pressure gradient, dpdxi
+    tavg_budget(i,j,k) % dpdx = tavg_budget(i,j,k) % dpdx + dpdx_p * tavg_dt
+    tavg_budget(i,j,k) % dpdy = tavg_budget(i,j,k) % dpdy + dpdy_p * tavg_dt
+    tavg_budget(i,j,k) % dpdz = tavg_budget(i,j,k) % dpdz + dpdz_p * tavg_dt
+
+    ! mean vel-velGrad product, ui*dujdxk
+    tavg_budget(i,j,k)% ududx = tavg_budget(i,j,k) % ududx + u_p * dudx_p * tavg_dt
+    tavg_budget(i,j,k)% ududy = tavg_budget(i,j,k) % ududy + u_p * dudy_p * tavg_dt
+    tavg_budget(i,j,k)% ududz = tavg_budget(i,j,k) % ududz + u_p * dudz_p * tavg_dt
+    tavg_budget(i,j,k)% udvdx = tavg_budget(i,j,k) % udvdx + u_p * dvdx_p * tavg_dt
+    tavg_budget(i,j,k)% udvdy = tavg_budget(i,j,k) % udvdy + u_p * dvdy_p * tavg_dt
+    tavg_budget(i,j,k)% udvdz = tavg_budget(i,j,k) % udvdz + u_p * dvdz_p * tavg_dt
+    tavg_budget(i,j,k)% udwdx = tavg_budget(i,j,k) % udwdx + u_p * dwdx_p * tavg_dt
+    tavg_budget(i,j,k)% udwdy = tavg_budget(i,j,k) % udwdy + u_p * dwdy_p * tavg_dt
+    tavg_budget(i,j,k)% udwdz = tavg_budget(i,j,k) % udwdz + u_p * dwdz_p * tavg_dt
+
+    tavg_budget(i,j,k)% vdudx = tavg_budget(i,j,k) % vdudx + v_p * dudx_p * tavg_dt
+    tavg_budget(i,j,k)% vdudy = tavg_budget(i,j,k) % vdudy + v_p * dudy_p * tavg_dt
+    tavg_budget(i,j,k)% vdudz = tavg_budget(i,j,k) % vdudz + v_p * dudz_p * tavg_dt
+    tavg_budget(i,j,k)% vdvdx = tavg_budget(i,j,k) % vdvdx + v_p * dvdx_p * tavg_dt
+    tavg_budget(i,j,k)% vdvdy = tavg_budget(i,j,k) % vdvdy + v_p * dvdy_p * tavg_dt
+    tavg_budget(i,j,k)% vdvdz = tavg_budget(i,j,k) % vdvdz + v_p * dvdz_p * tavg_dt
+    tavg_budget(i,j,k)% vdwdx = tavg_budget(i,j,k) % vdwdx + v_p * dwdx_p * tavg_dt
+    tavg_budget(i,j,k)% vdwdy = tavg_budget(i,j,k) % vdwdy + v_p * dwdy_p * tavg_dt
+    tavg_budget(i,j,k)% vdwdz = tavg_budget(i,j,k) % vdwdz + v_p * dwdz_p * tavg_dt
+
+    tavg_budget(i,j,k)% wdudx = tavg_budget(i,j,k) % wdudx + w_p * dudx_p * tavg_dt
+    tavg_budget(i,j,k)% wdudy = tavg_budget(i,j,k) % wdudy + w_p * dudy_p * tavg_dt
+    tavg_budget(i,j,k)% wdudz = tavg_budget(i,j,k) % wdudz + w_p * dudz_p * tavg_dt
+    tavg_budget(i,j,k)% wdvdx = tavg_budget(i,j,k) % wdvdx + w_p * dvdx_p * tavg_dt
+    tavg_budget(i,j,k)% wdvdy = tavg_budget(i,j,k) % wdvdy + w_p * dvdy_p * tavg_dt
+    tavg_budget(i,j,k)% wdvdz = tavg_budget(i,j,k) % wdvdz + w_p * dvdz_p * tavg_dt
+    tavg_budget(i,j,k)% wdwdx = tavg_budget(i,j,k) % wdwdx + w_p * dwdx_p * tavg_dt
+    tavg_budget(i,j,k)% wdwdy = tavg_budget(i,j,k) % wdwdy + w_p * dwdy_p * tavg_dt
+    tavg_budget(i,j,k)% wdwdz = tavg_budget(i,j,k) % wdwdz + w_p * dwdz_p * tavg_dt
+
+    ! Mean vel-vel-velGrad product, ui*uk*dujdxk
+    tavg_budget(i,j,k)%uududx = tavg_budget(i,j,k)%uududx+ u_p*u_p*dudx_p * tavg_dt
+    tavg_budget(i,j,k)%uvdudy = tavg_budget(i,j,k)%uvdudy+ u_p*v_p*dudy_p * tavg_dt
+    tavg_budget(i,j,k)%uwdudz = tavg_budget(i,j,k)%uwdudz+ u_p*w_p*dudz_p * tavg_dt
+    tavg_budget(i,j,k)%uudvdx = tavg_budget(i,j,k)%uudvdx+ u_p*u_p*dvdx_p * tavg_dt
+    tavg_budget(i,j,k)%uvdvdy = tavg_budget(i,j,k)%uvdvdy+ u_p*v_p*dvdy_p * tavg_dt
+    tavg_budget(i,j,k)%uwdvdz = tavg_budget(i,j,k)%uwdvdz+ u_p*w_p*dvdz_p * tavg_dt
+    tavg_budget(i,j,k)%uudwdx = tavg_budget(i,j,k)%uudwdx+ u_p*u_p*dwdx_p * tavg_dt
+    tavg_budget(i,j,k)%uvdwdy = tavg_budget(i,j,k)%uvdwdy+ u_p*v_p*dwdy_p * tavg_dt
+    tavg_budget(i,j,k)%uwdwdz = tavg_budget(i,j,k)%uwdwdz+ u_p*w_p*dwdz_p * tavg_dt
+
+    tavg_budget(i,j,k)%vududx=tavg_budget(i,j,k)%vududx + v_p*u_p*dudx_p * tavg_dt
+    tavg_budget(i,j,k)%vvdudy=tavg_budget(i,j,k)%vvdudy + v_p*v_p*dudy_p * tavg_dt
+    tavg_budget(i,j,k)%vwdudz=tavg_budget(i,j,k)%vwdudz + v_p*w_p*dudz_p * tavg_dt
+    tavg_budget(i,j,k)%vudvdx=tavg_budget(i,j,k)%vudvdx + v_p*u_p*dvdx_p * tavg_dt
+    tavg_budget(i,j,k)%vvdvdy=tavg_budget(i,j,k)%vvdvdy + v_p*v_p*dvdy_p * tavg_dt
+    tavg_budget(i,j,k)%vwdvdz=tavg_budget(i,j,k)%vwdvdz + v_p*w_p*dvdz_p * tavg_dt
+    tavg_budget(i,j,k)%vudwdx=tavg_budget(i,j,k)%vudwdx + v_p*u_p*dwdx_p * tavg_dt
+    tavg_budget(i,j,k)%vvdwdy=tavg_budget(i,j,k)%vvdwdy + v_p*v_p*dwdy_p * tavg_dt
+    tavg_budget(i,j,k)%vwdwdz=tavg_budget(i,j,k)%vwdwdz + v_p*w_p*dwdz_p * tavg_dt
+
+    tavg_budget(i,j,k)%wududx=tavg_budget(i,j,k)%wududx + w_p*u_p*dudx_p * tavg_dt
+    tavg_budget(i,j,k)%wvdudy=tavg_budget(i,j,k)%wvdudy + w_p*v_p*dudy_p * tavg_dt
+    tavg_budget(i,j,k)%wwdudz=tavg_budget(i,j,k)%wwdudz + w_p*w_p*dudz_p * tavg_dt
+    tavg_budget(i,j,k)%wudvdx=tavg_budget(i,j,k)%wudvdx + w_p*u_p*dvdx_p * tavg_dt
+    tavg_budget(i,j,k)%wvdvdy=tavg_budget(i,j,k)%wvdvdy + w_p*v_p*dvdy_p * tavg_dt
+    tavg_budget(i,j,k)%wwdvdz=tavg_budget(i,j,k)%wwdvdz + w_p*w_p*dvdz_p * tavg_dt
+    tavg_budget(i,j,k)%wudwdx=tavg_budget(i,j,k)%wudwdx + w_p*u_p*dwdx_p * tavg_dt
+    tavg_budget(i,j,k)%wvdwdy=tavg_budget(i,j,k)%wvdwdy + w_p*v_p*dwdy_p * tavg_dt
+    tavg_budget(i,j,k)%wwdwdz=tavg_budget(i,j,k)%wwdwdz + w_p*w_p*dwdz_p * tavg_dt
+
+    ! Mean velGrad-velGrad product, duidxk*dujdxk, i=j
+    tavg_budget(i,j,k)%uxux = tavg_budget(i,j,k)%uxux + dudx_p * dudx_p * tavg_dt
+    tavg_budget(i,j,k)%uyuy = tavg_budget(i,j,k)%uyuy + dudy_p * dudy_p * tavg_dt
+    tavg_budget(i,j,k)%uzuz = tavg_budget(i,j,k)%uzuz + dudz_p * dudz_p * tavg_dt
+    tavg_budget(i,j,k)%vxvx = tavg_budget(i,j,k)%vxvx + dvdx_p * dvdx_p * tavg_dt
+    tavg_budget(i,j,k)%vyvy = tavg_budget(i,j,k)%vyvy + dvdy_p * dvdy_p * tavg_dt
+    tavg_budget(i,j,k)%vzvz = tavg_budget(i,j,k)%vzvz + dvdz_p * dvdz_p * tavg_dt
+    tavg_budget(i,j,k)%wxwx = tavg_budget(i,j,k)%wxwx + dwdx_p * dwdx_p * tavg_dt
+    tavg_budget(i,j,k)%wywy = tavg_budget(i,j,k)%wywy + dwdy_p * dwdy_p * tavg_dt
+    tavg_budget(i,j,k)%wzwz = tavg_budget(i,j,k)%wzwz + dwdz_p * dwdz_p * tavg_dt
+
+    ! Mean velGrad-velGrad product, duidxk*dujdxk, i/=j
+    tavg_budget(i,j,k)%uxvx = tavg_budget(i,j,k)%uxvx + dudx_p * dvdx_p * tavg_dt
+    tavg_budget(i,j,k)%uyvy = tavg_budget(i,j,k)%uyvy + dudy_p * dvdy_p * tavg_dt
+    tavg_budget(i,j,k)%uzvz = tavg_budget(i,j,k)%uzvz + dudz_p * dvdz_p * tavg_dt
+    tavg_budget(i,j,k)%uxwx = tavg_budget(i,j,k)%uxwx + dudx_p * dwdx_p * tavg_dt
+    tavg_budget(i,j,k)%uywy = tavg_budget(i,j,k)%uywy + dudy_p * dwdy_p * tavg_dt
+    tavg_budget(i,j,k)%uzwz = tavg_budget(i,j,k)%uzwz + dudz_p * dwdz_p * tavg_dt
+    tavg_budget(i,j,k)%vxwx = tavg_budget(i,j,k)%vxwx + dvdx_p * dwdx_p * tavg_dt
+    tavg_budget(i,j,k)%vywy = tavg_budget(i,j,k)%vywy + dvdy_p * dwdy_p * tavg_dt
+    tavg_budget(i,j,k)%vzwz = tavg_budget(i,j,k)%vzwz + dvdz_p * dwdz_p * tavg_dt
+
+    ! another velocity gradient-velocity gradient correlation, duixj*dUjdxi
+    tavg_budget(i,j,k)%uyvx = tavg_budget(i,j,k)%uyvx + dudy_p * dvdx_p * tavg_dt
+    tavg_budget(i,j,k)%uzwx = tavg_budget(i,j,k)%uzwx + dudz_p * dwdx_p * tavg_dt
+    tavg_budget(i,j,k)%vzwy = tavg_budget(i,j,k)%vzwy + dvdz_p * dwdy_p * tavg_dt
+
+    ! Mean vel-presGrad product, ui*dpdxj
+    tavg_budget(i,j,k)%udpdx = tavg_budget(i,j,k) % udpdx + u_p * dpdx_p * tavg_dt
+    tavg_budget(i,j,k)%udpdy = tavg_budget(i,j,k) % udpdy + u_p * dpdy_p * tavg_dt
+    tavg_budget(i,j,k)%udpdz = tavg_budget(i,j,k) % udpdz + u_p * dpdz_p * tavg_dt
+    tavg_budget(i,j,k)%vdpdx = tavg_budget(i,j,k) % vdpdx + v_p * dpdx_p * tavg_dt
+    tavg_budget(i,j,k)%vdpdy = tavg_budget(i,j,k) % vdpdy + v_p * dpdy_p * tavg_dt
+    tavg_budget(i,j,k)%vdpdz = tavg_budget(i,j,k) % vdpdz + v_p * dpdz_p * tavg_dt
+    tavg_budget(i,j,k)%wdpdx = tavg_budget(i,j,k) % wdpdx + w_p * dpdx_p * tavg_dt
+    tavg_budget(i,j,k)%wdpdy = tavg_budget(i,j,k) % wdpdy + w_p * dpdy_p * tavg_dt
+    tavg_budget(i,j,k)%wdpdz = tavg_budget(i,j,k) % wdpdz + w_p * dpdz_p * tavg_dt
+
+    ! Mean pres-velGrad product, p*duidxj
+    tavg_budget(i,j,k)%pdudx = tavg_budget(i,j,k) % pdudx + p_p * dudx_p * tavg_dt
+    tavg_budget(i,j,k)%pdudy = tavg_budget(i,j,k) % pdudy + p_p * dudy_p * tavg_dt
+    tavg_budget(i,j,k)%pdudz = tavg_budget(i,j,k) % pdudz + p_p * dudz_p * tavg_dt
+    tavg_budget(i,j,k)%pdvdx = tavg_budget(i,j,k) % pdvdx + p_p * dvdx_p * tavg_dt
+    tavg_budget(i,j,k)%pdvdy = tavg_budget(i,j,k) % pdvdy + p_p * dvdy_p * tavg_dt
+    tavg_budget(i,j,k)%pdvdz = tavg_budget(i,j,k) % pdvdz + p_p * dvdz_p * tavg_dt
+    tavg_budget(i,j,k)%pdwdx = tavg_budget(i,j,k) % pdwdx + p_p * dwdx_p * tavg_dt
+    tavg_budget(i,j,k)%pdwdy = tavg_budget(i,j,k) % pdwdy + p_p * dwdy_p * tavg_dt
+    tavg_budget(i,j,k)%pdwdz = tavg_budget(i,j,k) % pdwdz + p_p * dwdz_p * tavg_dt
+
+    ! Mean Laplacian, nu*lap(uj)
+    tavg_budget(i,j,k) % lapu = tavg_budget(i,j,k) % lapu + divtx_p * tavg_dt
+    tavg_budget(i,j,k) % lapv = tavg_budget(i,j,k) % lapv + divty_p * tavg_dt
+    tavg_budget(i,j,k) % lapw = tavg_budget(i,j,k) % lapw + divtz_p * tavg_dt
+
+    ! Mean Vel-Laplacian, nu*ui*lap(uj)
+    tavg_budget(i,j,k)%ulapu = tavg_budget(i,j,k)%ulapu + u_p * divtx_p * tavg_dt
+    tavg_budget(i,j,k)%ulapv = tavg_budget(i,j,k)%ulapv + u_p * divty_p * tavg_dt
+    tavg_budget(i,j,k)%ulapw = tavg_budget(i,j,k)%ulapw + u_p * divtz_p * tavg_dt
+    tavg_budget(i,j,k)%vlapu = tavg_budget(i,j,k)%vlapu + v_p * divtx_p * tavg_dt
+    tavg_budget(i,j,k)%vlapv = tavg_budget(i,j,k)%vlapv + v_p * divty_p * tavg_dt
+    tavg_budget(i,j,k)%vlapw = tavg_budget(i,j,k)%vlapw + v_p * divtz_p * tavg_dt
+    tavg_budget(i,j,k)%wlapu = tavg_budget(i,j,k)%wlapu + w_p * divtx_p * tavg_dt
+    tavg_budget(i,j,k)%wlapv = tavg_budget(i,j,k)%wlapv + w_p * divty_p * tavg_dt
+    tavg_budget(i,j,k)%wlapw = tavg_budget(i,j,k)%wlapw + w_p * divtz_p * tavg_dt
+
+end do
+end do
+end do
+
+end subroutine tavg_budget_compute
+
+subroutine tavg_finalize()
+!*******************************************************************************
+use grid_m
+use stat_defs, only : tavg_t, tavg_total_time, tavg
+use stat_defs, only : rs_compute, rs
+use param, only : write_endian
+use param, only : ny,nz
+use param, only : coord
+
+if PPOUTPUT_SGS
+use stat_defs, only : tavg_sgs
+endif
+
+if PPOUTPUT_BUDGET
+use stat_defs, only : tavg_budget, budget_compute, budget
+endif
+
+
+$if $MPI
+use mpi_defs, only : mpi_sync_real_array,MPI_SYNC_DOWNUP
+use param, only : ierr,comm
+$endif
+
+implicit none
+
+
+character(64) :: fname_vel, fname_velw, fname_tau, fname_pres, fname_rs
+! character(64) :: fname_velgrad
+! character(64) :: fname_f, fname_vel2
+
+if PPOUTPUT_SGS
+character(64) :: fname_sgs, fname_cs
+endif
+
+if PPOUTPUT_BUDGET
+character(64) :: fname_rxx, fname_ryy, fname_rzz, fname_rxy, fname_rxz, fname_ryz
+endif
+
+
+integer :: i,j,k
+
+real(rprec), pointer, dimension(:) :: x,y,z,zw
+
+nullify(x,y,z,zw)
+
+x => grid % x
+y => grid % y
+z => grid % z
+zw => grid % zw
+
+! Common file name
+fname_vel = path     // 'output/veluv_avg'
+fname_velw = path    // 'output/velw_avg'
+! fname_vel2 = path    // 'output/vel2_avg'
+fname_tau = path     // 'output/tau_avg'
+! fname_f = path       // 'output/force_avg'
+fname_pres = path    // 'output/pres_avg'
+fname_rs = path      // 'output/rs'
+! fname_velgrad = path // 'output/velgrad_avg'
+if PPOUTPUT_SGS
+fname_cs = path // 'output/cs_opt2'
+fname_sgs = path // 'output/sgs'
+endif
+if PPOUTPUT_BUDGET
+fname_rxx = path // 'output/rxx'
+fname_ryy = path // 'output/ryy'
+fname_rzz = path // 'output/rzz'
+fname_rxy = path // 'output/rxy'
+fname_rxz = path // 'output/rxz'
+fname_ryz = path // 'output/ryz'
+endif
+
+! Binary
+$if $MPI
+call string_splice(bin_ext, '.c', coord, '.bin')
+$else
+bin_ext = '.bin'
+$endif
+call string_concat(fname_vel, bin_ext)
+call string_concat(fname_velw, bin_ext)
+! call string_concat(fname_vel2, bin_ext)
+call string_concat(fname_tau, bin_ext)
+call string_concat(fname_pres, bin_ext)
+! call string_concat(fname_f, bin_ext)
+call string_concat(fname_rs, bin_ext)
+! call string_concat(fname_velgrad, bin_ext)
+if PPOUTPUT_SGS
+call string_concat(fname_cs, bin_ext)
+call string_concat(fname_sgs, bin_ext)
+endif
+if PPOUTPUT_BUDGET
+call string_concat(fname_rxx, bin_ext)
+call string_concat(fname_ryy, bin_ext)
+call string_concat(fname_rzz, bin_ext)
+call string_concat(fname_rxy, bin_ext)
+call string_concat(fname_rxz, bin_ext)
+call string_concat(fname_ryz, bin_ext)
+endif
+
+! Final checkpoint all restart data
+call tavg_checkpoint()
+
+$if $MPI
+call mpi_barrier( comm, ierr )
+$endif
+
+!  Perform time averaging operation
+do k = jzmin, jzmax
+do j = 1, Ny
+do i = 1, Nx
+    tavg(i,j,k) % u    = tavg(i,j,k) % u    / tavg_total_time
+    tavg(i,j,k) % v    = tavg(i,j,k) % v    / tavg_total_time
+    tavg(i,j,k) % w_uv = tavg(i,j,k) % w    / tavg_total_time
+    tavg(i,j,k) % u_w  = tavg(i,j,k) % u_w  / tavg_total_time
+    tavg(i,j,k) % v_w  = tavg(i,j,k) % u_w  / tavg_total_time
+    tavg(i,j,k) % w    = tavg(i,j,k) % w_uv / tavg_total_time
+    tavg(i,j,k) % u2   = tavg(i,j,k) % u2   / tavg_total_time
+    tavg(i,j,k) % v2   = tavg(i,j,k) % v2   / tavg_total_time
+    tavg(i,j,k) % w2   = tavg(i,j,k) % w2   / tavg_total_time
+    tavg(i,j,k) % uv   = tavg(i,j,k) % uv   / tavg_total_time
+    tavg(i,j,k) % uw   = tavg(i,j,k) % uw   / tavg_total_time
+    tavg(i,j,k) % vw   = tavg(i,j,k) % vw   / tavg_total_time
+    tavg(i,j,k) % txx  = tavg(i,j,k) % txx  / tavg_total_time
+    tavg(i,j,k) % tyy  = tavg(i,j,k) % tyy  / tavg_total_time
+    tavg(i,j,k) % tzz  = tavg(i,j,k) % tzz  / tavg_total_time
+    tavg(i,j,k) % txy  = tavg(i,j,k) % txy  / tavg_total_time
+    tavg(i,j,k) % txz  = tavg(i,j,k) % txz  / tavg_total_time
+    tavg(i,j,k) % tyz  = tavg(i,j,k) % tyz  / tavg_total_time
+    tavg(i,j,k) % fx   = tavg(i,j,k) % fx   / tavg_total_time
+    tavg(i,j,k) % fy   = tavg(i,j,k) % fy   / tavg_total_time
+    tavg(i,j,k) % fz   = tavg(i,j,k) % fz   / tavg_total_time
+    tavg(i,j,k) % dudx = tavg(i,j,k) % dudx / tavg_total_time
+    tavg(i,j,k) % dudy = tavg(i,j,k) % dudy / tavg_total_time
+    tavg(i,j,k) % dudz = tavg(i,j,k) % dudz / tavg_total_time
+    tavg(i,j,k) % dvdx = tavg(i,j,k) % dvdx / tavg_total_time
+    tavg(i,j,k) % dvdy = tavg(i,j,k) % dvdy / tavg_total_time
+    tavg(i,j,k) % dvdz = tavg(i,j,k) % dvdz / tavg_total_time
+    tavg(i,j,k) % dwdx = tavg(i,j,k) % dwdx / tavg_total_time
+    tavg(i,j,k) % dwdy = tavg(i,j,k) % dwdy / tavg_total_time
+    tavg(i,j,k) % dwdz = tavg(i,j,k) % dwdz / tavg_total_time
+end do
+end do
+end do
+
+if PPOUTPUT_SGS
+do k = jzmin, jzmax
+do j = 1, Ny
+do i = 1, Nx
+    tavg_sgs(i,j,k) % cs_opt2 = tavg_sgs(i,j,k) % cs_opt2 / tavg_total_time
+    ! tavg_sgs(i,j,k) % Tn       = tavg_sgs(i,j,k) % Tn / tavg_total_time
+    tavg_sgs(i,j,k) % Nu_t     = tavg_sgs(i,j,k) % Nu_t / tavg_total_time
+    ! tavg_sgs(i,j,k) % F_LM     = tavg_sgs(i,j,k) % F_LM / tavg_total_time
+    ! tavg_sgs(i,j,k) % F_MM     = tavg_sgs(i,j,k) % F_MM / tavg_total_time
+    ! tavg_sgs(i,j,k) % F_QN     = tavg_sgs(i,j,k) % F_QN / tavg_total_time
+    ! tavg_sgs(i,j,k) % F_NN     = tavg_sgs(i,j,k) % F_NN / tavg_total_time
+    ! tavg_sgs(i,j,k) % ee_now   = tavg_sgs(i,j,k) % ee_now / tavg_total_time
+! if PPDYN_TN
+    ! tavg_sgs(i,j,k) % F_ee2    = tavg_sgs(i,j,k) % F_ee2 / tavg_total_time
+    ! tavg_sgs(i,j,k) % F_deedt2 = tavg_sgs(i,j,k) % F_deedt2 / tavg_total_time
+! endif
+end do
+end do
+end do
+endif
+
+if PPOUTPUT_BUDGET
+do k = jzmin, jzmax
+do j = 1, Ny
+do i = 1, Nx
+    ! Mean pressure on w-grid
+    tavg_budget(i,j,k) % p = tavg_budget(i,j,k) % p / tavg_total_time
+
+    ! Mean velocity-velocity product, ui*uj
+    tavg_budget(i,j,k) % uu = tavg_budget(i,j,k) % uu / tavg_total_time
+    tavg_budget(i,j,k) % vv = tavg_budget(i,j,k) % vv / tavg_total_time
+    tavg_budget(i,j,k) % ww = tavg_budget(i,j,k) % ww / tavg_total_time
+    tavg_budget(i,j,k) % uv = tavg_budget(i,j,k) % uv / tavg_total_time
+    tavg_budget(i,j,k) % uw = tavg_budget(i,j,k) % uw / tavg_total_time
+    tavg_budget(i,j,k) % vw = tavg_budget(i,j,k) % vw / tavg_total_time
+
+    ! Mean velocity gradients, duidxj
+    tavg_budget(i,j,k) % dudx = tavg_budget(i,j,k) % dudx / tavg_total_time
+    tavg_budget(i,j,k) % dudy = tavg_budget(i,j,k) % dudy / tavg_total_time
+    tavg_budget(i,j,k) % dudz = tavg_budget(i,j,k) % dudz / tavg_total_time
+    tavg_budget(i,j,k) % dvdx = tavg_budget(i,j,k) % dvdx / tavg_total_time
+    tavg_budget(i,j,k) % dvdy = tavg_budget(i,j,k) % dvdy / tavg_total_time
+    tavg_budget(i,j,k) % dvdz = tavg_budget(i,j,k) % dvdz / tavg_total_time
+    tavg_budget(i,j,k) % dwdx = tavg_budget(i,j,k) % dwdx / tavg_total_time
+    tavg_budget(i,j,k) % dwdy = tavg_budget(i,j,k) % dwdy / tavg_total_time
+    tavg_budget(i,j,k) % dwdz = tavg_budget(i,j,k) % dwdz / tavg_total_time
+
+    ! Mean pressure gradients, dpdxi
+    tavg_budget(i,j,k) % dpdx = tavg_budget(i,j,k) % dpdx / tavg_total_time
+    tavg_budget(i,j,k) % dpdy = tavg_budget(i,j,k) % dpdy / tavg_total_time
+    tavg_budget(i,j,k) % dpdz = tavg_budget(i,j,k) % dpdz / tavg_total_time
+
+    ! Mean vel-velGrad product, ui*dujdxk
+    tavg_budget(i,j,k) % ududx = tavg_budget(i,j,k) % ududx / tavg_total_time
+    tavg_budget(i,j,k) % ududy = tavg_budget(i,j,k) % ududy / tavg_total_time
+    tavg_budget(i,j,k) % ududz = tavg_budget(i,j,k) % ududz / tavg_total_time
+    tavg_budget(i,j,k) % udvdx = tavg_budget(i,j,k) % udvdx / tavg_total_time
+    tavg_budget(i,j,k) % udvdy = tavg_budget(i,j,k) % udvdy / tavg_total_time
+    tavg_budget(i,j,k) % udvdz = tavg_budget(i,j,k) % udvdz / tavg_total_time
+    tavg_budget(i,j,k) % udwdx = tavg_budget(i,j,k) % udwdx / tavg_total_time
+    tavg_budget(i,j,k) % udwdy = tavg_budget(i,j,k) % udwdy / tavg_total_time
+    tavg_budget(i,j,k) % udwdz = tavg_budget(i,j,k) % udwdz / tavg_total_time
+
+    tavg_budget(i,j,k) % vdudx = tavg_budget(i,j,k) % vdudx / tavg_total_time
+    tavg_budget(i,j,k) % vdudy = tavg_budget(i,j,k) % vdudy / tavg_total_time
+    tavg_budget(i,j,k) % vdudz = tavg_budget(i,j,k) % vdudz / tavg_total_time
+    tavg_budget(i,j,k) % vdvdx = tavg_budget(i,j,k) % vdvdx / tavg_total_time
+    tavg_budget(i,j,k) % vdvdy = tavg_budget(i,j,k) % vdvdy / tavg_total_time
+    tavg_budget(i,j,k) % vdvdz = tavg_budget(i,j,k) % vdvdz / tavg_total_time
+    tavg_budget(i,j,k) % vdwdx = tavg_budget(i,j,k) % vdwdx / tavg_total_time
+    tavg_budget(i,j,k) % vdwdy = tavg_budget(i,j,k) % vdwdy / tavg_total_time
+    tavg_budget(i,j,k) % vdwdz = tavg_budget(i,j,k) % vdwdz / tavg_total_time
+
+    tavg_budget(i,j,k) % wdudx = tavg_budget(i,j,k) % wdudx / tavg_total_time
+    tavg_budget(i,j,k) % wdudy = tavg_budget(i,j,k) % wdudy / tavg_total_time
+    tavg_budget(i,j,k) % wdudz = tavg_budget(i,j,k) % wdudz / tavg_total_time
+    tavg_budget(i,j,k) % wdvdx = tavg_budget(i,j,k) % wdvdx / tavg_total_time
+    tavg_budget(i,j,k) % wdvdy = tavg_budget(i,j,k) % wdvdy / tavg_total_time
+    tavg_budget(i,j,k) % wdvdz = tavg_budget(i,j,k) % wdvdz / tavg_total_time
+    tavg_budget(i,j,k) % wdwdx = tavg_budget(i,j,k) % wdwdx / tavg_total_time
+    tavg_budget(i,j,k) % wdwdy = tavg_budget(i,j,k) % wdwdy / tavg_total_time
+    tavg_budget(i,j,k) % wdwdz = tavg_budget(i,j,k) % wdwdz / tavg_total_time
+
+    ! Mean vel-vel-velGrad product, ui*uk*dujdxk
+    tavg_budget(i,j,k) % uududx = tavg_budget(i,j,k) % uududx / tavg_total_time
+    tavg_budget(i,j,k) % uvdudy = tavg_budget(i,j,k) % uvdudy / tavg_total_time
+    tavg_budget(i,j,k) % uwdudz = tavg_budget(i,j,k) % uwdudz / tavg_total_time
+    tavg_budget(i,j,k) % uudvdx = tavg_budget(i,j,k) % uudvdx / tavg_total_time
+    tavg_budget(i,j,k) % uvdvdy = tavg_budget(i,j,k) % uvdvdy / tavg_total_time
+    tavg_budget(i,j,k) % uwdvdz = tavg_budget(i,j,k) % uwdvdz / tavg_total_time
+    tavg_budget(i,j,k) % uudwdx = tavg_budget(i,j,k) % uudwdx / tavg_total_time
+    tavg_budget(i,j,k) % uvdwdy = tavg_budget(i,j,k) % uvdwdy / tavg_total_time
+    tavg_budget(i,j,k) % uwdwdz = tavg_budget(i,j,k) % uwdwdz / tavg_total_time
+
+    tavg_budget(i,j,k) % vududx = tavg_budget(i,j,k) % vududx / tavg_total_time
+    tavg_budget(i,j,k) % vvdudy = tavg_budget(i,j,k) % vvdudy / tavg_total_time
+    tavg_budget(i,j,k) % vwdudz = tavg_budget(i,j,k) % vwdudz / tavg_total_time
+    tavg_budget(i,j,k) % vudvdx = tavg_budget(i,j,k) % vudvdx / tavg_total_time
+    tavg_budget(i,j,k) % vvdvdy = tavg_budget(i,j,k) % vvdvdy / tavg_total_time
+    tavg_budget(i,j,k) % vwdvdz = tavg_budget(i,j,k) % vwdvdz / tavg_total_time
+    tavg_budget(i,j,k) % vudwdx = tavg_budget(i,j,k) % vudwdx / tavg_total_time
+    tavg_budget(i,j,k) % vvdwdy = tavg_budget(i,j,k) % vvdwdy / tavg_total_time
+    tavg_budget(i,j,k) % vwdwdz = tavg_budget(i,j,k) % vwdwdz / tavg_total_time
+
+    tavg_budget(i,j,k) % wududx = tavg_budget(i,j,k) % wududx / tavg_total_time
+    tavg_budget(i,j,k) % wvdudy = tavg_budget(i,j,k) % wvdudy / tavg_total_time
+    tavg_budget(i,j,k) % wwdudz = tavg_budget(i,j,k) % wwdudz / tavg_total_time
+    tavg_budget(i,j,k) % wudvdx = tavg_budget(i,j,k) % wudvdx / tavg_total_time
+    tavg_budget(i,j,k) % wvdvdy = tavg_budget(i,j,k) % wvdvdy / tavg_total_time
+    tavg_budget(i,j,k) % wwdvdz = tavg_budget(i,j,k) % wwdvdz / tavg_total_time
+    tavg_budget(i,j,k) % wudwdx = tavg_budget(i,j,k) % wudwdx / tavg_total_time
+    tavg_budget(i,j,k) % wvdwdy = tavg_budget(i,j,k) % wvdwdy / tavg_total_time
+    tavg_budget(i,j,k) % wwdwdz = tavg_budget(i,j,k) % wwdwdz / tavg_total_time
+
+    ! Mean velGrad-velGrad product, duidxk*dujdxk, i=j
+    tavg_budget(i,j,k) % uxux = tavg_budget(i,j,k) % uxux / tavg_total_time
+    tavg_budget(i,j,k) % uyuy = tavg_budget(i,j,k) % uyuy / tavg_total_time
+    tavg_budget(i,j,k) % uzuz = tavg_budget(i,j,k) % uzuz / tavg_total_time
+    tavg_budget(i,j,k) % vxvx = tavg_budget(i,j,k) % vxvx / tavg_total_time
+    tavg_budget(i,j,k) % vyvy = tavg_budget(i,j,k) % vyvy / tavg_total_time
+    tavg_budget(i,j,k) % vzvz = tavg_budget(i,j,k) % vzvz / tavg_total_time
+    tavg_budget(i,j,k) % wxwx = tavg_budget(i,j,k) % wxwx / tavg_total_time
+    tavg_budget(i,j,k) % wywy = tavg_budget(i,j,k) % wywy / tavg_total_time
+    tavg_budget(i,j,k) % wzwz = tavg_budget(i,j,k) % wzwz / tavg_total_time
+
+    ! Mean velGrad-velGrad product, duidxk*dujdxk, i/=j
+    tavg_budget(i,j,k) % uxvx = tavg_budget(i,j,k) % uxvx / tavg_total_time
+    tavg_budget(i,j,k) % uyvy = tavg_budget(i,j,k) % uyvy / tavg_total_time
+    tavg_budget(i,j,k) % uzvz = tavg_budget(i,j,k) % uzvz / tavg_total_time
+    tavg_budget(i,j,k) % uxwx = tavg_budget(i,j,k) % uxwx / tavg_total_time
+    tavg_budget(i,j,k) % uywy = tavg_budget(i,j,k) % uywy / tavg_total_time
+    tavg_budget(i,j,k) % uzwz = tavg_budget(i,j,k) % uzwz / tavg_total_time
+    tavg_budget(i,j,k) % vxwx = tavg_budget(i,j,k) % vxwx / tavg_total_time
+    tavg_budget(i,j,k) % vywy = tavg_budget(i,j,k) % vywy / tavg_total_time
+    tavg_budget(i,j,k) % vzwz = tavg_budget(i,j,k) % vzwz / tavg_total_time
+
+    ! duidxj*dujdxk, i /= j
+     tavg_budget(i,j,k) % uyvx = tavg_budget(i,j,k) % uyvx / tavg_total_time
+     tavg_budget(i,j,k) % uzwx = tavg_budget(i,j,k) % uzwx / tavg_total_time
+     tavg_budget(i,j,k) % vzwy = tavg_budget(i,j,k) % vzwy / tavg_total_time
+
+    ! Mean vel-presGrad product, ui*dpdxj
+    tavg_budget(i,j,k) % udpdx = tavg_budget(i,j,k) % udpdx / tavg_total_time
+    tavg_budget(i,j,k) % udpdy = tavg_budget(i,j,k) % udpdy / tavg_total_time
+    tavg_budget(i,j,k) % udpdz = tavg_budget(i,j,k) % udpdz / tavg_total_time
+    tavg_budget(i,j,k) % vdpdx = tavg_budget(i,j,k) % vdpdx / tavg_total_time
+    tavg_budget(i,j,k) % vdpdy = tavg_budget(i,j,k) % vdpdy / tavg_total_time
+    tavg_budget(i,j,k) % vdpdz = tavg_budget(i,j,k) % vdpdz / tavg_total_time
+    tavg_budget(i,j,k) % wdpdx = tavg_budget(i,j,k) % wdpdx / tavg_total_time
+    tavg_budget(i,j,k) % wdpdy = tavg_budget(i,j,k) % wdpdy / tavg_total_time
+    tavg_budget(i,j,k) % wdpdz = tavg_budget(i,j,k) % wdpdz / tavg_total_time
+
+    ! Mean pres-velGrad product, p*duidxj
+    tavg_budget(i,j,k) % pdudx = tavg_budget(i,j,k) % pdudx / tavg_total_time
+    tavg_budget(i,j,k) % pdudy = tavg_budget(i,j,k) % pdudy / tavg_total_time
+    tavg_budget(i,j,k) % pdudz = tavg_budget(i,j,k) % pdudz / tavg_total_time
+    tavg_budget(i,j,k) % pdvdx = tavg_budget(i,j,k) % pdvdx / tavg_total_time
+    tavg_budget(i,j,k) % pdvdy = tavg_budget(i,j,k) % pdvdy / tavg_total_time
+    tavg_budget(i,j,k) % pdvdz = tavg_budget(i,j,k) % pdvdz / tavg_total_time
+    tavg_budget(i,j,k) % pdwdx = tavg_budget(i,j,k) % pdwdx / tavg_total_time
+    tavg_budget(i,j,k) % pdwdy = tavg_budget(i,j,k) % pdwdy / tavg_total_time
+    tavg_budget(i,j,k) % pdwdz = tavg_budget(i,j,k) % pdwdz / tavg_total_time
+
+    ! Mean Laplacian, nu*lap(uj)
+    tavg_budget(i,j,k) % lapu = tavg_budget(i,j,k) % lapu / tavg_total_time
+    tavg_budget(i,j,k) % lapv = tavg_budget(i,j,k) % lapv / tavg_total_time
+    tavg_budget(i,j,k) % lapw = tavg_budget(i,j,k) % lapw / tavg_total_time
+
+    ! Mean Vel-Laplacian, nu*ui*lap(uj)
+    tavg_budget(i,j,k) % ulapu = tavg_budget(i,j,k) % ulapu / tavg_total_time
+    tavg_budget(i,j,k) % ulapv = tavg_budget(i,j,k) % ulapv / tavg_total_time
+    tavg_budget(i,j,k) % ulapw = tavg_budget(i,j,k) % ulapw / tavg_total_time
+    tavg_budget(i,j,k) % vlapu = tavg_budget(i,j,k) % vlapu / tavg_total_time
+    tavg_budget(i,j,k) % vlapv = tavg_budget(i,j,k) % vlapv / tavg_total_time
+    tavg_budget(i,j,k) % vlapw = tavg_budget(i,j,k) % vlapw / tavg_total_time
+    tavg_budget(i,j,k) % wlapu = tavg_budget(i,j,k) % wlapu / tavg_total_time
+    tavg_budget(i,j,k) % wlapv = tavg_budget(i,j,k) % wlapv / tavg_total_time
+    tavg_budget(i,j,k) % wlapw = tavg_budget(i,j,k) % wlapw / tavg_total_time
+
+end do
+end do
+end do
+endif
+
+
+$if $MPI
+call mpi_barrier( comm, ierr )
+$endif
+
+!  Sync entire tavg structure
+$if $MPI
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%u, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%v, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%w_uv, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%u_w, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%v_w, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%w, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%u2, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%v2, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%w2, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%uw, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%vw, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%uv, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%p, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%fx, 0, MPI_SYNC_DOWNUP )
+if PPOUTPUT_SGS
+call mpi_sync_real_array( tavg_sgs(1:nx,1:ny,lbz:nz)%cs_opt2, 0, MPI_SYNC_DOWNUP )
+! call mpi_sync_real_array( tavg_sgs(1:nx,1:ny,lbz:nz)%Tn, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_sgs(1:nx,1:ny,lbz:nz)%Nu_t, 0, MPI_SYNC_DOWNUP )
+! call mpi_sync_real_array( tavg_sgs(1:nx,1:ny,lbz:nz)%F_LM, 0, MPI_SYNC_DOWNUP )
+! call mpi_sync_real_array( tavg_sgs(1:nx,1:ny,lbz:nz)%F_MM, 0, MPI_SYNC_DOWNUP )
+! call mpi_sync_real_array( tavg_sgs(1:nx,1:ny,lbz:nz)%F_QN, 0, MPI_SYNC_DOWNUP )
+! call mpi_sync_real_array( tavg_sgs(1:nx,1:ny,lbz:nz)%F_NN, 0, MPI_SYNC_DOWNUP )
+! call mpi_sync_real_array( tavg_sgs(1:nx,1:ny,lbz:nz)%ee_now, 0, MPI_SYNC_DOWNUP )
+! $if PPDYN_TN
+! call mpi_sync_real_array( tavg_sgs(1:nx,1:ny,lbz:nz)%F_ee2, 0, MPI_SYNC_DOWNUP )
+! call mpi_sync_real_array(tavg_sgs(1:nx,1:ny,lbz:nz)%F_deedt2, 0, MPI_SYNC_DOWNUP)
+! $endif
+endif
+if PPOUTPUT_BUDGET
+! Mean pressure on w-grid
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%p, 0, MPI_SYNC_DOWNUP )
+
+! Mean velocity-velocity product, ui*uj, on w-grid
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%uu, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vv, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%ww, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%uv, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%uw, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vw, 0, MPI_SYNC_DOWNUP )
+
+! Mean velocity gradients, duidxj
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%dudx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%dudy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%dudz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%dvdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%dvdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%dvdz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%dwdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%dwdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%dwdz, 0, MPI_SYNC_DOWNUP )
+
+! Mean pressure gradients, dpdxi
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%dpdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%dpdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%dpdz, 0, MPI_SYNC_DOWNUP )
+
+! Mean vel-velGrad product, ui*dujdxk
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%ududx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%ududy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%ududz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%udvdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%udvdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%udvdz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%udwdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%udwdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%udwdz, 0, MPI_SYNC_DOWNUP )
+
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vdudx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vdudy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vdudz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vdvdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vdvdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vdvdz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vdwdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vdwdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vdwdz, 0, MPI_SYNC_DOWNUP )
+
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wdudx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wdudy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wdudz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wdvdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wdvdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wdvdz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wdwdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wdwdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wdwdz, 0, MPI_SYNC_DOWNUP )
+
+! Mean vel-vel-velGrad product, ui*uk*dujdxk
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%uududx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%uvdudy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%uwdudz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%uudvdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%uvdvdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%uwdvdz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%uudwdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%uvdwdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%uwdwdz, 0, MPI_SYNC_DOWNUP )
+
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%vududx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%vvdudy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%vwdudz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%vudvdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%vvdvdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%vwdvdz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%vudwdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%vvdwdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%vwdwdz, 0, MPI_SYNC_DOWNUP )
+
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%wududx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%wvdudy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%wwdudz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%wudvdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%wvdvdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%wwdvdz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%wudwdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%wvdwdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%wwdwdz, 0, MPI_SYNC_DOWNUP )
+
+! Mean velGrad-velGrad product, duidxk*dujdxk, i=j
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%uxux, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%uyuy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%uzuz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vxvx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vyvy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vzvz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wxwx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wywy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wzwz, 0, MPI_SYNC_DOWNUP )
+
+! Mean velGrad-velGrad product, duidxk*dujdxk, i/=j
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%uxvx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%uyvy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%uzvz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%uxwx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%uywy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%uzwz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vxwx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vywy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vzwz, 0, MPI_SYNC_DOWNUP )
+
+! duidxj*dujdxi, i /= j
+ call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%uyvx, 0, MPI_SYNC_DOWNUP)
+ call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%uzwx, 0, MPI_SYNC_DOWNUP)
+ call mpi_sync_real_array(tavg_budget(1:nx,1:ny,lbz:nz)%vzwy, 0, MPI_SYNC_DOWNUP)
+
+! Mean vel-presGrad product, ui*dpdxj
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%udpdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%udpdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%udpdz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vdpdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vdpdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vdpdz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wdpdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wdpdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wdpdz, 0, MPI_SYNC_DOWNUP )
+
+! Mean pres-velGrad product, p*duidxj
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%pdudx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%pdudy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%pdudz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%pdvdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%pdvdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%pdvdz, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%pdwdx, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%pdwdy, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%pdwdz, 0, MPI_SYNC_DOWNUP )
+
+! Mean Laplacian, nu*lap(uj)
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%lapu, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%lapv, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%lapw, 0, MPI_SYNC_DOWNUP )
+
+! Mean Vel-Laplacian, nu*ui*lap(uj)
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%ulapu, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%ulapv, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%ulapw, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vlapu, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vlapv, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%vlapw, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wlapu, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wlapv, 0, MPI_SYNC_DOWNUP )
+call mpi_sync_real_array( tavg_budget(1:nx,1:ny,lbz:nz)%wlapw, 0, MPI_SYNC_DOWNUP )
+
+endif
+
+$endif
+
+! Write all the 3D data
+
+! Write binary data
+open(unit=13, file=fname_vel, form='unformatted', convert=write_endian,        &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) tavg(:nx,:ny,1:nz)%u
+write(13,rec=2) tavg(:nx,:ny,1:nz)%v
+write(13,rec=3) tavg(:nx,:ny,1:nz)%w_uv
+close(13)
+
+! Write binary data
+open(unit=13, file=fname_velw, form='unformatted', convert=write_endian,       &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) tavg(:nx,:ny,1:nz)%w
+close(13)
+
+open(unit=13, file=fname_vel2, form='unformatted', convert=write_endian,       &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) tavg(:nx,:ny,1:nz)%u2
+write(13,rec=2) tavg(:nx,:ny,1:nz)%v2
+write(13,rec=3) tavg(:nx,:ny,1:nz)%w2
+write(13,rec=4) tavg(:nx,:ny,1:nz)%uw
+write(13,rec=5) tavg(:nx,:ny,1:nz)%vw
+write(13,rec=6) tavg(:nx,:ny,1:nz)%uv
+close(13)
+
+open(unit=13, file=fname_tau, form='unformatted', convert=write_endian,        &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) tavg(:nx,:ny,1:nz)%txx
+write(13,rec=2) tavg(:nx,:ny,1:nz)%txy
+write(13,rec=3) tavg(:nx,:ny,1:nz)%tyy
+write(13,rec=4) tavg(:nx,:ny,1:nz)%txz
+write(13,rec=5) tavg(:nx,:ny,1:nz)%tyz
+write(13,rec=6) tavg(:nx,:ny,1:nz)%tzz
+close(13)
+
+open(unit=13, file=fname_pres, form='unformatted', convert=write_endian,       &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) tavg(:nx,:ny,1:nz)%p
+close(13)
+
+!open(unit=13, file=fname_f, form='unformatted', convert=write_endian,          &
+!    access='direct', recl=nx*ny*nz*rprec)
+!write(13,rec=1) tavg(:nx,:ny,1:nz)%fx
+!write(13,rec=2) tavg(:nx,:ny,1:nz)%fy
+!write(13,rec=3) tavg(:nx,:ny,1:nz)%fz
+!close(13)
+
+open(unit=13, file=fname_velgrad, form='unformatted', convert=write_endian,    &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) tavg(:nx,:ny,1:nz)%dudx
+write(13,rec=2) tavg(:nx,:ny,1:nz)%dudy
+write(13,rec=3) tavg(:nx,:ny,1:nz)%dudz
+write(13,rec=4) tavg(:nx,:ny,1:nz)%dvdx
+write(13,rec=5) tavg(:nx,:ny,1:nz)%dvdy
+write(13,rec=6) tavg(:nx,:ny,1:nz)%dvdz
+write(13,rec=7) tavg(:nx,:ny,1:nz)%dwdx
+write(13,rec=8) tavg(:nx,:ny,1:nz)%dwdy
+write(13,rec=9) tavg(:nx,:ny,1:nz)%dwdz
+close(13)
+
+
+
+$if $MPI
+! Ensure all writes complete before preceeding
+call mpi_barrier( comm, ierr )
+$endif
+
+! Do the Reynolds stress calculations afterwards. Now we can interpolate w and
+! ww to the uv grid and do the calculations. We have already written the data to
+! the files so we can overwrite now
+allocate(rs(nx,ny,lbz:nz))
+rs = rs_compute(tavg , lbz)
+
+! Write binary data
+open(unit=13, file=fname_rs, form='unformatted', convert=write_endian,         &
+    access='direct',recl=nx*ny*nz*rprec)
+write(13,rec=1) rs(:nx,:ny,1:nz)%up2
+write(13,rec=2) rs(:nx,:ny,1:nz)%vp2
+write(13,rec=3) rs(:nx,:ny,1:nz)%wp2
+write(13,rec=4) rs(:nx,:ny,1:nz)%upwp
+write(13,rec=5) rs(:nx,:ny,1:nz)%vpwp
+write(13,rec=6) rs(:nx,:ny,1:nz)%upvp
+close(13)
+
+deallocate(rs)
+
+if PPOUTPUT_SGS
+open(unit=13, file=fname_cs, form='unformatted', convert=write_endian,         &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) tavg_sgs(:nx,:ny,1:nz)%cs_opt2
+close(13)
+
+open(unit=13, file=fname_sgs, form='unformatted', convert=write_endian,        &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) tavg_sgs(:nx,:ny,1:nz)%Nu_t
+close(13)
+endif
+
+if PPOUTPUT_BUDGET
+! Do the budget calculations after time-averaging.
+allocate(budget(nx,ny,lbz:nz))
+budget = budget_compute(tavg_budget, tavg , lbz)
+
+! Write binary data
+open(unit=13, file=fname_rxx, form='unformatted', convert=write_endian,        &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) budget(:nx,:ny,1:nz)%advxx
+write(13,rec=2) budget(:nx,:ny,1:nz)%tflucxx
+write(13,rec=3) budget(:nx,:ny,1:nz)%tpresxx
+write(13,rec=4) budget(:nx,:ny,1:nz)%pstrainxx
+write(13,rec=5) budget(:nx,:ny,1:nz)%tviscxx
+write(13,rec=6) budget(:nx,:ny,1:nz)%prodxx
+write(13,rec=7) budget(:nx,:ny,1:nz)%pdissxx
+close(13)
+
+open(unit=13, file=fname_ryy, form='unformatted', convert=write_endian,        &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) budget(:nx,:ny,1:nz)%advyy
+write(13,rec=2) budget(:nx,:ny,1:nz)%tflucyy
+write(13,rec=3) budget(:nx,:ny,1:nz)%tpresyy
+write(13,rec=4) budget(:nx,:ny,1:nz)%pstrainyy
+write(13,rec=5) budget(:nx,:ny,1:nz)%tviscyy
+write(13,rec=6) budget(:nx,:ny,1:nz)%prodyy
+write(13,rec=7) budget(:nx,:ny,1:nz)%pdissyy
+close(13)
+
+open(unit=13, file=fname_rzz, form='unformatted', convert=write_endian,        &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) budget(:nx,:ny,1:nz)%advzz
+write(13,rec=2) budget(:nx,:ny,1:nz)%tfluczz
+write(13,rec=3) budget(:nx,:ny,1:nz)%tpreszz
+write(13,rec=4) budget(:nx,:ny,1:nz)%pstrainzz
+write(13,rec=5) budget(:nx,:ny,1:nz)%tvisczz
+write(13,rec=6) budget(:nx,:ny,1:nz)%prodzz
+write(13,rec=7) budget(:nx,:ny,1:nz)%pdisszz
+close(13)
+
+open(unit=13, file=fname_rxy, form='unformatted', convert=write_endian,        &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) budget(:nx,:ny,1:nz)%advxy
+write(13,rec=2) budget(:nx,:ny,1:nz)%tflucxy
+write(13,rec=3) budget(:nx,:ny,1:nz)%tpresxy
+write(13,rec=4) budget(:nx,:ny,1:nz)%pstrainxy
+write(13,rec=5) budget(:nx,:ny,1:nz)%tviscxy
+write(13,rec=6) budget(:nx,:ny,1:nz)%prodxy
+write(13,rec=7) budget(:nx,:ny,1:nz)%pdissxy
+close(13)
+
+open(unit=13, file=fname_rxz, form='unformatted', convert=write_endian,        &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) budget(:nx,:ny,1:nz)%advxz
+write(13,rec=2) budget(:nx,:ny,1:nz)%tflucxz
+write(13,rec=3) budget(:nx,:ny,1:nz)%tpresxz
+write(13,rec=4) budget(:nx,:ny,1:nz)%pstrainxz
+write(13,rec=5) budget(:nx,:ny,1:nz)%tviscxz
+write(13,rec=6) budget(:nx,:ny,1:nz)%prodxz
+write(13,rec=7) budget(:nx,:ny,1:nz)%pdissxz
+close(13)
+
+open(unit=13, file=fname_ryz, form='unformatted', convert=write_endian,        &
+    access='direct', recl=nx*ny*nz*rprec)
+write(13,rec=1) budget(:nx,:ny,1:nz)%advyz
+write(13,rec=2) budget(:nx,:ny,1:nz)%tflucyz
+write(13,rec=3) budget(:nx,:ny,1:nz)%tpresyz
+write(13,rec=4) budget(:nx,:ny,1:nz)%pstrainyz
+write(13,rec=5) budget(:nx,:ny,1:nz)%tviscyz
+write(13,rec=6) budget(:nx,:ny,1:nz)%prodyz
+write(13,rec=7) budget(:nx,:ny,1:nz)%pdissyz
+close(13)
+
+!open(unit=13, file=fname_mke, form='unformatted', convert=write_endian,        &
+!    access='direct', recl=nx*ny*nz*rprec)
+!write(13,rec=1) budget(:nx,:ny,1:nz)%madv
+!write(13,rec=2) budget(:nx,:ny,1:nz)%mtfluc
+!write(13,rec=3) budget(:nx,:ny,1:nz)%mtpres
+!write(13,rec=4) budget(:nx,:ny,1:nz)%mtvisc
+!write(13,rec=5) budget(:nx,:ny,1:nz)%mpdiss
+!write(13,rec=6) budget(:nx,:ny,1:nz)%mdiss
+!close(13)
+
+deallocate(budget)
+
+endif
+
+! Write binary data
+
+$if $MPI
+! Ensure all writes complete before preceeding
+call mpi_barrier( comm, ierr )
+$endif
+
+end subroutine tavg_finalize
+
+!*******************************************************************************
+subroutine tavg_checkpoint()
+!*******************************************************************************
+!
+! This subroutine writes the restart data and is to be called by 'checkpoint'
+! for intermediate checkpoints and by 'tavg_finalize' at the end of the
+! simulation.
+!
+use param, only : checkpoint_tavg_file, write_endian
+use stat_defs, only : tavg_total_time, tavg
+if PPOUTPUT_SGS
+use param, only : checkpoint_tavg_sgs_file
+use stat_defs, only : tavg_sgs
+endif
+if PPOUTPUT_BUDGET
+use param, only : checkpoint_tavg_budget_file
+use stat_defs, only : tavg_budget
+endif
+implicit none
+
+character(64) :: fname
+
+fname = checkpoint_tavg_file
+$if $MPI
+call string_concat( fname, '.c', coord)
+$endif
+
+!  Write data to tavg.out
+open(1, file=fname, action='write', position='rewind',form='unformatted',      &
+    convert=write_endian)
+write(1) tavg_total_time
+write(1) tavg
+close(1)
+
+if PPOUTPUT_SGS
+fname = checkpoint_tavg_sgs_file
+$if $MPI
+call string_concat( fname, '.c', coord)
+$endif
+!  Write data to tavg_sgs.out
+open(1, file=fname, action='write', position='rewind',form='unformatted',      &
+    convert=write_endian)
+write(1) tavg_total_time
+write(1) tavg_sgs
+close(1)
+endif
+
+if PPOUTPUT_BUDGET
+fname = checkpoint_tavg_budget_file
+$if $MPI
+call string_concat( fname, '.c', coord)
+$endif
+!  Write data to tavg_budget.out
+open(1, file=fname, action='write', position='rewind',form='unformatted',      &
+    convert=write_endian)
+write(1) tavg_total_time
+write(1) tavg_budget
+close(1)
+endif
+
+
+end subroutine tavg_checkpoint
+
+
+
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 subroutine avg_stats ()
 use param

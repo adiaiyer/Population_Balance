@@ -287,6 +287,29 @@ real(kind=rprec),parameter::cap_thick=80._rprec, z_decay=1._rprec
 
 
 
+!-----------------Post processing and Time averaging flags------------------!
+
+logical,parameter :: PPOUTPUT_BUDGET = .false.
+logical, parameter :: PPOUTPUT_SGS = .false.
+
+! If checkpoint_data = true then the simulation will store restart data every
+! checkpoint_nskip timesteps. Used in io.f90
+
+logical,parameter :: checkpoint_data= .true.
+integer,parameter :: checkpoint_nskip = 3500
+
+character(*), parameter :: checkpoint_tavg_file = path//'tavg.out'
+
+logical :: tavg_calc = .true.
+integer(parameter) :: tavg_nstart = 12000 , tavg_nend = 5000000, tavg_nskip =100
+
+real(rprec) :: tavg_total_time
+
+
+! Time between calls of tavg_compute, built by summing dt
+real(rprec) :: tavg_dt
+! Switch for determining if time averaging has been initialized
+logical :: tavg_initialized = .false.
 
 !------xxxxxxxxx--POLLEN_PARAMETERS--xxxxxxxxx---------------
 
@@ -553,15 +576,7 @@ real (rprec), parameter :: U_stokes = omega_w * wavenm_w * amp_w**2
 
 !DY End here
 !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-!AA add intermediate checkpoints for restarting
 
-! If checkpoint_data = true then the simulation will store restart data every
-! checkpoint_nskip timesteps. Used in io.f90
-
-logical,parameter :: checkpoint_data= .true.
-integer,parameter :: checkpoint_nskip = 3500
-
-!AA ENd
 
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !DY Added by Di Yang for deep horizon oil plume with momentum flux
