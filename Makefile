@@ -29,6 +29,7 @@ SRCS =  bottombc.f90 \
         fft.f90 \
         filt_da.f90 \
         forcing.f90 \
+	functions.f90 \
         ic.f90 \
         ic_dns.f90 \
         immersedbc.f90 \
@@ -40,6 +41,7 @@ SRCS =  bottombc.f90 \
         lagrange_Ssim.f90 \
         main_crossflow_Coriol3D.f90 \
         messages.f90 \
+	mpi_defs.f90 \
         padd.f90 param.f90 \
         press_stag_array.f90 \
         ran3.f90 rmsdiv.f90 \
@@ -49,6 +51,7 @@ SRCS =  bottombc.f90 \
         sgs_stag.f90 \
         sgsmodule.f90 \
         sim_param.f90 \
+	stat_defs.f90 \
         std_dynamic.f90 \
         string_util.f90 \
         test_filtermodule.f90 \

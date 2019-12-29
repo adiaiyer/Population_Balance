@@ -73,6 +73,9 @@ READ_ENDIAN = DEFAULT
 USE_TURBINES=no
 USE_BINARY=no
 
+USE_PPBUDGET = no
+
+USE_PPSGS = yes
 # Use CGNS data output
 USE_CGNS=no
 
