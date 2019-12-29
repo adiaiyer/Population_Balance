@@ -26,11 +26,6 @@ use debug_mod
 use outflow_fringe,only:setfringe,fringe
 implicit none
 
-$if ($MPI)
-  $define $lbz 0
-$else
-  $define $lbz 1
-$endif
 
 integer,parameter::wbase=1  !--controls the frequency of screen diagnostics
 integer :: jx,jy,jz,counter_out=0
@@ -65,7 +60,7 @@ $endif
 
 !++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !DY Added by Di Yang for ocean LES with Stokes drift
-real(kind=rprec),dimension($lbz:nz) :: ust
+real(kind=rprec),dimension(lbz:nz) :: ust
 !DY End here
 !++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -564,7 +559,7 @@ do jt=1,nsteps
   if (OCEAN_FLAG) then
      ! Enforce coriolis forcing for ocean simulation without geostrophic wind vector
      if(STOKES_FLAG) then
-        do jz=$lbz,nz
+        do jz=lbz,nz
            $if ($MPI)
            z = (coord*(nz-1) + jz - 0.5_rprec) * dz
            $else
@@ -1009,7 +1004,7 @@ endif   !LV1
 !AA Adding jet source term in a grid of 9 cells around Q_src
 
  $if ($MPI)
-   do jz=$lbz,nz 
+   do jz=lbz,nz 
       z = (coord*(nz-1) + jz - 0.5_rprec) * dz
       !print *, ' z value',z,(coord*(nz-1) + jz - 0.5_rprec)
    enddo
@@ -1089,7 +1084,7 @@ endif   !LV1
 
 !Fringe Change
   if(FRINGE_FLAG) then
-     do jz = $lbz,nz
+     do jz = lbz,nz
         do jy = 1,ny
            do jx = ix_fringe+1,nx
 !!$            u(jx,jy,jz) = u(ix_fringe,jy,jz)*(1._rprec-fringe(jx)) &
