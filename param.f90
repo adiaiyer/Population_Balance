@@ -14,7 +14,7 @@ public
 $if ($MPI)
   $define $MPI_LOGICAL .true.
  ! $define $NPROC 32
-  $define $NPROC 96
+  $define $NPROC 48
 $else
   $define $MPI_LOGICAL .false.
   $define $NPROC 1
@@ -27,7 +27,7 @@ $undefine $MPI_LOGICAL
 $if ($MPI)
   integer :: status(MPI_STATUS_SIZE)
 $endif
-
+integer,parameter :: lbz = 0
 character (*), parameter :: path = './'
 character (*), parameter :: path_op = './output_data/'
 !character (*), parameter :: path = './test_remote/homog/'
@@ -47,7 +47,8 @@ integer :: coord = -1  !--same here
 integer, allocatable, dimension(:) :: rank_of_coord, coord_of_rank
 !DY End 1
 !--end mpi stuff
-
+character(*),parameter :: read_endian = 'native'
+character(*),parameter :: write_endian = 'native'
 logical, parameter :: VERBOSE = .false.  !--prints small stuff to screen
                       !--use DEBUG to write lots of data/files
 
@@ -76,7 +77,7 @@ real(rprec),parameter::dx=L_x/nx,dy=L_y/ny
 !                3 hours = 108000 steps
 
 !!!!!!!! Changed by AA
-integer,parameter::nsteps=10000 !simulation steps
+integer,parameter::nsteps=20 !simulation steps
 !!!!!!! Ends Here
 
 !integer,parameter::nsteps=40000 !simulation steps
@@ -289,8 +290,6 @@ real(kind=rprec),parameter::cap_thick=80._rprec, z_decay=1._rprec
 
 !-----------------Post processing and Time averaging flags------------------!
 
-logical,parameter :: PPOUTPUT_BUDGET = .false.
-logical, parameter :: PPOUTPUT_SGS = .false.
 
 ! If checkpoint_data = true then the simulation will store restart data every
 ! checkpoint_nskip timesteps. Used in io.f90
@@ -301,15 +300,8 @@ integer,parameter :: checkpoint_nskip = 3500
 character(*), parameter :: checkpoint_tavg_file = path//'tavg.out'
 
 logical :: tavg_calc = .true.
-integer(parameter) :: tavg_nstart = 12000 , tavg_nend = 5000000, tavg_nskip =100
+integer,parameter :: tavg_nstart = 5 , tavg_nend = 5000000, tavg_nskip =5
 
-real(rprec) :: tavg_total_time
-
-
-! Time between calls of tavg_compute, built by summing dt
-real(rprec) :: tavg_dt
-! Switch for determining if time averaging has been initialized
-logical :: tavg_initialized = .false.
 
 !------xxxxxxxxx--POLLEN_PARAMETERS--xxxxxxxxx---------------
 
@@ -324,7 +316,7 @@ logical,parameter :: PCon_FLAG=.TRUE.
 ! Flag to initialize pollen concentration
 ! initPCon=.TRUE.  - read pollen concentration from vel_sc.out
 ! initPCon=.FALSE. - initialize pollen concentration with zero
-logical,parameter :: initPCon=.TRUE.
+logical,parameter :: initPCon=.true.
 
 ! Scale for pollen concentration (in grains/m3 or g/m3 or kg/m3)
 real(kind=rprec),parameter :: PCon_scale=1._rprec

@@ -21,12 +21,10 @@
 module mpi_defs
 !*******************************************************************************
 use mpi
+use param, only : MPI_RPREC
 implicit none
 
 save
-private
-
-public :: initialize_mpi, mpi_sync_real_array
 public :: MPI_SYNC_DOWN, MPI_SYNC_UP, MPI_SYNC_DOWNUP
 
 character (*), parameter :: mod_name = 'mpi_defs'
@@ -35,78 +33,74 @@ integer, parameter :: MPI_SYNC_DOWN=1
 integer, parameter :: MPI_SYNC_UP=2
 integer, parameter :: MPI_SYNC_DOWNUP=3
 
-$if PPCGNS
-integer, public :: cgnsParallelComm
-$endif
-
 contains
 
 !*******************************************************************************
-subroutine initialize_mpi()
-!*******************************************************************************
-use types, only : rprec
-use param
-implicit none
-
-integer :: ip, coords(1)
-integer :: localComm
-
-! Set the local communicator
-$if PPCPS
-    ! Create the local communicator (split from MPI_COMM_WORLD)
-    ! This also sets the globally defined intercommunicator (bridge)
-    call create_mpi_comms_cps( localComm )
-#else
-    localComm = MPI_COMM_WORLD
-$endif
-
-call mpi_comm_size (localComm, nproc, ierr)
-call mpi_comm_rank (localComm, global_rank, ierr)
-
-! set up a 1d cartesian topology
-call mpi_cart_create (localComm, 1, (/ nproc /), (/ .false. /),                &
-    .false., comm, ierr)
-
-! slight problem here for ghost layers:
-! u-node info needs to be shifted up to proc w/ rank "up",
-! w-node info needs to be shifted down to proc w/ rank "down"
-call mpi_cart_shift (comm, 0, 1, down, up, ierr)
-call mpi_comm_rank (comm, rank, ierr)
-call mpi_cart_coords (comm, rank, 1, coords, ierr)
-! use coord (NOT rank) to determine global position
-coord = coords(1)
-
-write (chcoord, '(a,i0,a)') '(', coord, ')'  ! () make easier to use
-
-! rank->coord and coord->rank conversions
-allocate( rank_of_coord(0:nproc-1), coord_of_rank(0:nproc-1) )
-do ip = 0, nproc-1
-    call mpi_cart_rank (comm, (/ ip /), rank_of_coord(ip), ierr)
-    call mpi_cart_coords (comm, ip, 1, coords, ierr)
-    coord_of_rank(ip) = coords(1)
-end do
-
-! set the MPI_RPREC variable
-if (rprec == kind (1.e0)) then
-    MPI_RPREC = MPI_REAL
-    MPI_CPREC = MPI_COMPLEX
-else if (rprec == kind (1.d0)) then
-    MPI_RPREC = MPI_DOUBLE_PRECISION
-    MPI_CPREC = MPI_DOUBLE_COMPLEX
-else
-    write (*, *) 'error defining MPI_RPREC/MPI_CPREC'
-    stop
-end if
-
-$if PPCGNS
-! Set the CGNS parallel Communicator
-cgnsParallelComm = localComm
-
-! Set the parallel communicator
-call cgp_mpi_comm_f(cgnsParallelComm, ierr)
-$endif
-
-end subroutine initialize_mpi
+!subroutine initialize_mpi()
+!!*******************************************************************************
+!use types, only : rprec
+!use param
+!implicit none
+!
+!integer :: ip, coords(1)
+!integer :: localComm
+!
+!! Set the local communicator
+!$if PPCPS
+!    ! Create the local communicator (split from MPI_COMM_WORLD)
+!    ! This also sets the globally defined intercommunicator (bridge)
+!    call create_mpi_comms_cps( localComm )
+!#else
+!    localComm = MPI_COMM_WORLD
+!$endif
+!
+!call mpi_comm_size (localComm, nproc, ierr)
+!call mpi_comm_rank (localComm, global_rank, ierr)
+!
+!! set up a 1d cartesian topology
+!call mpi_cart_create (localComm, 1, (/ nproc /), (/ .false. /),                &
+!    .false., comm, ierr)
+!
+!! slight problem here for ghost layers:
+!! u-node info needs to be shifted up to proc w/ rank "up",
+!! w-node info needs to be shifted down to proc w/ rank "down"
+!call mpi_cart_shift (comm, 0, 1, down, up, ierr)
+!call mpi_comm_rank (comm, rank, ierr)
+!call mpi_cart_coords (comm, rank, 1, coords, ierr)
+!! use coord (NOT rank) to determine global position
+!coord = coords(1)
+!
+!write (chcoord, '(a,i0,a)') '(', coord, ')'  ! () make easier to use
+!
+!! rank->coord and coord->rank conversions
+!allocate( rank_of_coord(0:nproc-1), coord_of_rank(0:nproc-1) )
+!do ip = 0, nproc-1
+!    call mpi_cart_rank (comm, (/ ip /), rank_of_coord(ip), ierr)
+!    call mpi_cart_coords (comm, ip, 1, coords, ierr)
+!    coord_of_rank(ip) = coords(1)
+!end do
+!
+!! set the MPI_RPREC variable
+!if (rprec == kind (1.e0)) then
+!    MPI_RPREC = MPI_REAL
+!    MPI_CPREC = MPI_COMPLEX
+!else if (rprec == kind (1.d0)) then
+!    MPI_RPREC = MPI_DOUBLE_PRECISION
+!    MPI_CPREC = MPI_DOUBLE_COMPLEX
+!else
+!    write (*, *) 'error defining MPI_RPREC/MPI_CPREC'
+!    stop
+!end if
+!
+!$if PPCGNS
+!! Set the CGNS parallel Communicator
+!cgnsParallelComm = localComm
+!
+!! Set the parallel communicator
+!call cgp_mpi_comm_f(cgnsParallelComm, ierr)
+!$endif
+!
+!end subroutine initialize_mpi
 
 !*******************************************************************************
 subroutine mpi_sync_real_array( var, lbz, isync )
