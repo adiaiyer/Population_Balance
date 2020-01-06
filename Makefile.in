@@ -72,7 +72,7 @@ READ_ENDIAN = DEFAULT
 # Use binary output for output files
 USE_TURBINES=no
 USE_BINARY=no
-
+USE_PPCON = yes
 USE_PPBUDGET = no
 
 USE_PPSGS = yes

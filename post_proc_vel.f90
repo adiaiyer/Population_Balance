@@ -31,7 +31,7 @@ use types,only:rprec
   INTEGER,PARAMETER                           :: npcon=1
   INTEGER,PARAMETER                          :: lh=nx/2+1,ld=2*lh
   INTEGER,PARAMETER                          :: jt_start =2
-  INTEGER,PARAMETER                          :: jt_end = 12
+  INTEGER,PARAMETER                          :: jt_end = 8
   INTEGER,PARAMETER                           :: nt=jt_end-jt_start+1
   REAL(rprec),PARAMETER                      :: z_i=1._rprec
   REAL(rprec),PARAMETER                      :: L_z = z_i/nproc
@@ -43,9 +43,10 @@ use types,only:rprec
   REAL(rprec),PARAMETER                      :: T_scale = 300.
   real(rprec)                                :: junk
   REAL(rprec),dimension(:,:,:),allocatable   ::u0,v0,w0,dissip0,dissip,avg_dissip
-  REAL(rprec),dimension(:,:,:),allocatable   :: u,v,w,avg_u,avg_v,avg_w
+  REAL(rprec),dimension(:,:,:),allocatable   ::  u,v,w,avg_u,avg_v,avg_w,u2,v2,w2, &
+                                                 avg_u2,avg_v2,avg_w2
   REAL(rprec),dimension(:,:,:,:),allocatable :: Pcon0,breakage_freq0,Re0
-  REAL(rprec),dimension(:,:,:,:),allocatable :: Pcon,avg_Pcon
+  REAL(rprec),dimension(:,:,:,:),allocatable :: Pcon,avg_Pcon,pcon2,avg_pcon2
   CHARACTER(len=64)                           :: file
   CHARACTER(len=64)                           :: dir
   INTEGER                                     ::ip,jt,jx,jy,jz,jt_total,nzs,ipcon,counter
@@ -53,17 +54,24 @@ use types,only:rprec
   INTEGER,PARAMETER                           :: xps=nx/2,yps=ny/2
   integer(kind=8)  :: reclen
   dir ='output_data/'
-  allocate(Pcon0(ld,ny,1:nz,npcon))
 !    print *,"hello"
    allocate(u0(ld,ny,1:nz),v0(ld,ny,1:nz),w0(ld,ny,1:nz))
    allocate(u(ld,ny,1:nz_tot),v(ld,ny,1:nz_tot),w(ld,ny,1:nz_tot),avg_u(ld,ny,1:nz_tot),avg_v(ld,ny,1:nz_tot))
+   allocate(u2(ld,ny,1:nz_tot),v2(ld,ny,1:nz_tot),w2(ld,ny,1:nz_tot),avg_u2(ld,ny,1:nz_tot),avg_v2(ld,ny,1:nz_tot))
    allocate(avg_w(ld,ny,1:nz_tot))
+   allocate(avg_w2(ld,ny,1:nz_tot))
    allocate(dissip0(ld,ny,1:nz),dissip(ld,ny,1:nz_tot),avg_dissip(ld,ny,1:nz_tot))
+   allocate(Pcon0(ld,ny,1:nz,npcon),Pcon(ld,ny,1:nz_tot,npcon),avg_pcon(ld,ny,1:nz_tot,npcon))
+   allocate(Pcon2(ld,ny,1:nz_tot,npcon),avg_pcon2(ld,ny,1:nz_tot,npcon))
   avg_w=0._rprec
   avg_u=0._rprec
   avg_v=0._rprec
+  avg_w2=0._rprec
+  avg_u2=0._rprec
+  avg_v2=0._rprec
    avg_dissip=0._rprec
-  avg_w=0._rprec
+   avg_pcon =0._rprec
+   avg_pcon2 = 0._rprec
   do jt=jt_start,jt_end
     counter = jt-jt_start+1
  !   counter=1
@@ -76,20 +84,38 @@ use types,only:rprec
        u(:,:,nzs+1:nzs+nz) = u0(:,:,1:nz)
        v(:,:,nzs+1:nzs+nz) = v0(:,:,1:nz)
        w(:,:,nzs+1:nzs+nz) = w0(:,:,1:nz)
+       Pcon(:,:,nzs+1:nzs+nz,:) = Pcon0(:,:,1:nz,:)
        dissip(:,:,nzs+1:nzs+nz) = dissip0(:,:,1:nz)
        close(2000+ip)
     enddo
-  print *,"Opened files,timestep=",jt_total
+!  print *,"Opened files,timestep=",jt_total
  ! print *,minloc(w(xps,yps,:)), minval(w(xps,yps,:))!,maxval(w(xps,yps,:))
-  avg_u = avg_u +u/nt    
+    u2 = u**2
+    v2 = v**2
+    w2 = w**2
+    pcon2 = pcon**2
+    avg_u2 = avg_u2 + u2/nt
+    avg_v2 = avg_v2 + v2/nt
+    avg_w2 = avg_w2 + w2/nt
+    avg_u = avg_u +u/nt    
     avg_v = avg_v +v/nt
      avg_w = avg_w +w/nt
+     avg_pcon = avg_pcon + Pcon/nt
+     avg_pcon2 = avg_pcon2 + Pcon2/nt
     avg_dissip = avg_dissip + dissip/nt
   enddo
 
   print *,minval(avg_u(xps,yps,:)),maxval(avg_u(xps,yps,:))
   print *,minval(avg_v(xps,yps,:)),maxval(avg_v(xps,yps,:))
   print *,minval(avg_w(xps,yps,:)),maxval(avg_w(xps,yps,:))
+  print *, minval(avg_Pcon(xps,yps,:,1)),maxval(avg_pcon(xps,yps,:,1))
+  print *,minval(avg_u2(xps,yps,:)),maxval(avg_u2(xps,yps,:))
+  print *,minval(avg_v2(xps,yps,:)),maxval(avg_v2(xps,yps,:))
+  print *,minval(avg_w2(xps,yps,:)),maxval(avg_w2(xps,yps,:))
+  print *, minval(avg_Pcon2(xps,yps,:,1)),maxval(avg_pcon2(xps,yps,:,1))
+  print *,(avg_u(xps,yps,100)),(avg_u(xps,yps,300))
+  print *,(avg_v(xps,yps,100)),(avg_v(xps,yps,300))
+  print *,(avg_w(xps,yps,100)),(avg_w(xps,yps,300))
 505 format(18e15.7)
 !inquire(iolength=reclen) avg_w(1:nx,1:ny,1:nz_tot)
 !open(unit=20,file='av_uvweps.out',access='direct',recl=reclen,form='unformatted',action='read')

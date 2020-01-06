@@ -25,6 +25,11 @@ ifeq ($(USE_MPI), yes)
   FPP += -DMPI
 endif
 
+ifeq ($(USE_PPCON),yes)
+  FPP += -DPPCON
+endif
+
+
 ifeq ($(WRITE_ENDIAN),LITTLE)
   FPP += -DWRITE_LITTLE_ENDIAN
 endif

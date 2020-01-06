@@ -2461,6 +2461,10 @@ use stat_defs, only : tavg
 $if ($PPSGS)
 use stat_defs, only : tavg_sgs
 $endif
+$if ($PPCON)
+use stat_defs, only : tavg_pcon
+use param, only : npcon
+$endif
 !$if ($PPBUDGET)
 !use stat_defs, only : tavg_budget
 !$endif
@@ -2471,7 +2475,9 @@ character (*), parameter :: ftavg_in = path // 'tavg.out'
 $if ($PPSGS)
 character (*), parameter :: ftavg_sgs_in = path // 'tavg_sgs.out'
 $endif
-
+$if ($PPCON)
+character (*), parameter :: ftavg_pcon_in = path // 'tavg_pcon.out'
+$endif
 !$if ($PPBUDGET)
 !character (*), parameter :: ftavg_budget_in = path // 'tavg_budget.out'
 !$endif
@@ -2482,7 +2488,7 @@ $endif
 
 character (128) :: fname
 logical :: exst
-integer :: i,j,k
+integer :: i,j,k,ip
 fname = ftavg_in
 $if (MPI)
 write(fname,'(A,A,I4)')TRIM(fname),TRIM(MPI_suffix),2000+coord
@@ -2497,6 +2503,9 @@ $if ($PPSGS)
     allocate(tavg_sgs(nx,ny,lbz:nz))
 $endif
 
+$if ($PPCON)
+        allocate(tavg_pcon(nx,ny,lbz:nz,npcon))
+$endif
 $if ($PPBUDGET)
     allocate(tavg_budget(nx,ny,lbz:nz))
 $endif
@@ -2542,6 +2551,18 @@ $endif
         ! to replace commented line below, set all types of tavg_zplane = 0._rprec
         ! call type_set( tavg_zplane(k), 0._rprec )
     end do
+$if ($PPCON)
+    do ip = 1,npcon
+    do k  = 1,Nz
+    do j  = 1,Ny
+    do i  = 1,Nx
+        tavg_pcon(i,j,k,ip)%pcon  = 0._rprec
+        tavg_pcon(i,j,k,ip)%pcon2 = 0._rprec
+    enddo
+    enddo
+    enddo
+    enddo
+$endif
     endif
 inquire (file=fname, exist=exst)
 if (.not. exst) then
@@ -2558,6 +2579,18 @@ else
     read(1) tavg_total_time
     read(1) tavg
     close(1)
+
+$if($PPCON)
+    fname = ftavg_pcon_in
+    $if ($MPI)
+        write(fname,'(A,A,I4)')TRIM(fname),TRIM(MPI_suffix),2000+coord
+    $endif
+    open(1, file=fname, action='read', position='rewind', form='unformatted',  &
+        convert=read_endian)
+    read(1) tavg_total_time
+    read(1) tavg_pcon
+    close(1)
+$endif
 !    $if ($PPSGS)
 !        fname = ftavg_sgs_in
 !        $if ($MPI)
@@ -2598,10 +2631,13 @@ subroutine tavg_compute()
 
 !! This subroutine collects statistics for each flow variable.
 use stat_defs, only : tavg, tavg_total_time, tavg_dt
-
-use param, only : nx,ny,nz,lbz,ubc,lbc_mom,coord,nproc !ubc_mom,lbc_mom
+$if ($PPCON)
+use stat_defs, only : tavg_pcon
+$endif
+use param, only : nx,ny,nz,lbz,ubc,lbc_mom,coord,nproc,npcon !ubc_mom,lbc_mom
 use sim_param, only : u, v, w, p
 use sim_param, only : txx, txy, tyy, txz, tyz, tzz
+use sim_param, only : pcon
 use sim_param, only : dudx, dudy, dudz, dvdx, dvdy, dvdz, dwdx, dwdy, dwdz
 use functions, only : interp_to_uv_grid,interp_to_w_grid
 implicit none
@@ -2610,8 +2646,11 @@ real(rprec) :: u_p, u_p2, v_p, v_p2, w_p, w_p2
 real(rprec), allocatable, dimension(:,:,:) :: w_uv, u_w, v_w
 real(rprec), allocatable, dimension(:,:,:) :: pres_real
 real(rprec), allocatable, dimension(:,:,:) :: dwdx_uv, dwdy_uv, dudz_uv, dvdz_uv
-integer :: i,j,k
+integer :: i,j,k,ip
 integer :: jzmin,jzmax
+$if ($PPCON)
+        real(rprec) :: pc_p
+$endif
 allocate(w_uv(nx,ny,lbz:nz), u_w(nx,ny,lbz:nz), v_w(nx,ny,lbz:nz))
 allocate(pres_real(nx,ny,lbz:nz))
 allocate( dwdx_uv(nx,ny,lbz:nz), dwdy_uv(nx,ny,lbz:nz), &
@@ -2671,14 +2710,12 @@ do i = 1, nx
     v_p2= v_w(i,j,k)     !! w grid
     w_p = w(i,j,k)       !! w grid
     w_p2= w_uv(i,j,k)    !! uv grid
-
     tavg(i,j,k) % u = tavg(i,j,k) % u + u_p * tavg_dt !! uv grid
     tavg(i,j,k) % v = tavg(i,j,k) % v + v_p * tavg_dt !! uv grid
     tavg(i,j,k) % w_uv = tavg(i,j,k) % w_uv + w_p2 * tavg_dt !! uv grid
     tavg(i,j,k) % u_w = tavg(i,j,k) % u_w + u_p2 * tavg_dt !! w grid
     tavg(i,j,k) % v_w = tavg(i,j,k) % v_w + v_p2 * tavg_dt !! w grid
     tavg(i,j,k) % w = tavg(i,j,k) % w + w_p * tavg_dt !! w grid
-
     ! Note: compute u'w' on w-grid because stresses on w-grid --pj
     tavg(i,j,k) % u2 = tavg(i,j,k) % u2 + u_p * u_p * tavg_dt !! uv grid
     tavg(i,j,k) % v2 = tavg(i,j,k) % v2 + v_p * v_p * tavg_dt !! uv grid
@@ -2705,10 +2742,25 @@ do i = 1, nx
     tavg(i,j,k) % dwdx = tavg(i,j,k) % dwdx + dwdx_uv(i,j,k) * tavg_dt
     tavg(i,j,k) % dwdy = tavg(i,j,k) % dwdy + dwdy_uv(i,j,k) * tavg_dt
     tavg(i,j,k) % dwdz = tavg(i,j,k) % dwdz + dwdz(i,j,k)    * tavg_dt
+        
+end do
+end do
+end do
+$if ($PPCON)
+do ip = 1,npcon
+do k = lbz,jzmax
+do j = 1,ny
+do i = 1,nx
+        pc_p = pcon(i,j,k,ip)
+        tavg_pcon(i,j,k,ip) % pcon = tavg_pcon(i,j,k,ip) % pcon + pc_p*tavg_dt
+        tavg_pcon(i,j,k,ip) % pcon2 = tavg_pcon(i,j,k,ip) % pcon2 + pc_p * pc_p * tavg_dt
+enddo
+enddo
+enddo
+enddo
+$endif
 
-end do
-end do
-end do
+
 ! Update tavg_total_time for variable time stepping
 tavg_total_time = tavg_total_time + tavg_dt
 
@@ -3091,6 +3143,13 @@ use param, only : write_endian
 use param, only : ny,nz,lbz
 use param, only : coord
 
+$if ($PPCON)
+
+use stat_defs, only : tavg_pcon_t,tavg_pcon
+use stat_defs, only : rs_compute_pcon,rs_pcon
+use param, only : npcon
+use param, only : MPI_RPREC, down, up, comm, status, ierr, nz
+$endif
 $if ($PPSGS)
 use stat_defs, only : tavg_sgs
 $endif
@@ -3109,8 +3168,11 @@ implicit none
 
 
 character(64) :: fname_vel, fname_velw, fname_tau, fname_pres, fname_rs,bin_ext
- character(64) :: fname_velgrad
- character(64) :: fname_f, fname_vel2
+character(64) :: fname_velgrad
+character(64) :: fname_f, fname_vel2
+$if ($PPCON)
+character(64) :: fname_pcon,fname_pcon2,fname_rs_pcon
+$endif
 
 $if ($PPSGS)
 character(64) :: fname_sgs, fname_cs
@@ -3121,7 +3183,7 @@ character(64) :: fname_rxx, fname_ryy, fname_rzz, fname_rxy, fname_rxz, fname_ry
 $endif
 
 integer :: jzmin,jzmax
-integer :: i,j,k
+integer :: i,j,k,ip
 
 !real(rprec), pointer, dimension(:) :: x,y,z,zw
 !
@@ -3134,6 +3196,11 @@ integer :: i,j,k
 
 ! Common file name
 fname_vel = path     // 'output/veluv_avg'
+$if ($PPCON)
+fname_pcon = path     //'output/pcon_avg'
+fname_pcon2 = path   //'output/pcon2_avg'
+fname_rs_pcon = path //'output/rs_pcon'
+$endif
 fname_velw = path    // 'output/velw_avg'
  fname_vel2 = path    // 'output/vel2_avg'
 fname_tau = path     // 'output/tau_avg'
@@ -3163,7 +3230,15 @@ bin_ext = '.bin'
 $endif
 
 write(fname_vel,'(A,A)') TRIM(fname_vel),TRIM(bin_ext)
+
+$if ($PPCON)
+write(fname_pcon,'(A,A)') TRIM(fname_pcon),TRIM(bin_ext)
+write(fname_pcon2,'(A,A)') TRIM(fname_pcon2),TRIM(bin_ext)
+write(fname_rs_pcon,'(A,A)') TRIM(fname_rs_pcon),TRIM(bin_ext)
+$endif
+
 write(fname_velw,'(A,A)') TRIM(fname_velw),TRIM(bin_ext)
+
 write(fname_vel2,'(A,A)') TRIM(fname_vel2),TRIM(bin_ext)
 write(fname_tau,'(A,A)') TRIM(fname_tau),TRIM(bin_ext)
 write(fname_pres,'(A,A)') TRIM(fname_pres),TRIM(bin_ext)
@@ -3253,6 +3328,22 @@ do i = 1, Nx
 end do
 end do
 end do
+
+
+$if ($PPCON)
+
+do ip = 1,npcon
+do k = jzmin, jzmax
+do j = 1,Ny
+do i = 1, Nx
+
+        tavg_pcon(i,j,k,ip) % pcon = tavg_pcon(i,j,k,ip) % pcon / tavg_total_time
+        tavg_pcon(i,j,k,ip) %pcon2 = tavg_pcon(i,j,k,ip) % pcon2 / tavg_total_time
+enddo
+enddo
+enddo
+enddo
+$endif
 
 $if ($PPSGS)
 do k = jzmin, jzmax
@@ -3459,6 +3550,32 @@ call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%vw, 0, MPI_SYNC_DOWNUP )
 call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%uv, 0, MPI_SYNC_DOWNUP )
 call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%p, 0, MPI_SYNC_DOWNUP )
 call mpi_sync_real_array( tavg(1:nx,1:ny,lbz:nz)%fx, 0, MPI_SYNC_DOWNUP )
+$if ($PPCON)
+do ip=1,npcon
+   call mpi_sendrecv (tavg_pcon(1, 1, 1, ip)%pcon, nx*ny, MPI_RPREC, down,1,  &
+               tavg_pcon(1, 1, nz, ip)%pcon, ld*ny, MPI_RPREC, up, 1,&
+               comm, status, ierr)
+   call mpi_sendrecv (tavg_pcon(1, 1, nz-1, ip)%pcon, nx*ny, MPI_RPREC, up,2,  &
+             tavg_pcon(1, 1, 0, ip)%pcon, ld*ny, MPI_RPREC, down,2,   &
+             comm, status, ierr)
+
+   call mpi_sendrecv (tavg_pcon(1, 1, 1, ip)%pcon2, nx*ny, MPI_RPREC, down,3,  &
+               tavg_pcon(1, 1, nz, ip)%pcon2, ld*ny, MPI_RPREC, up, 3,&
+               comm, status, ierr)
+   call mpi_sendrecv (tavg_pcon(1, 1, nz-1, ip)%pcon2, nx*ny, MPI_RPREC, up,4,  &
+             tavg_pcon(1, 1, 0, ip)%pcon2, ld*ny, MPI_RPREC, down,4,   &
+             comm, status, ierr)
+enddo
+
+
+
+
+!call mpi_sync_real_array(tavg_pcon(1:nx,1:ny,lbz:nz,1:npcon)%pcon,0,MPI_SYNC_DOWNUP)
+!call mpi_sync_real_array(tavg_pcon(1:nx,1:ny,lbz:nz,1:npcon)%pcon2,0,MPI_SYNC_DOWNUP)
+$endif
+
+
+
 $endif
 $if ($PPSGS)
 call mpi_sync_real_array( tavg_sgs(1:nx,1:ny,lbz:nz)%cs_opt2, 0, MPI_SYNC_DOWNUP )
@@ -3658,6 +3775,22 @@ write(13,rec=5) tavg(:nx,:ny,1:nz)%vw
 write(13,rec=6) tavg(:nx,:ny,1:nz)%uv
 close(13)
 
+$if ($PPCON)
+open(unit=13, file=fname_pcon, form='unformatted', convert=write_endian,       &
+    access='direct', recl=nx*ny*nz*rprec)
+do ip=1,npcon
+write(13,rec=ip) tavg_pcon(:nx,:ny,1:nz,ip)%pcon
+enddo
+close(13)
+open(unit=13, file=fname_pcon2, form='unformatted', convert=write_endian,       &
+    access='direct', recl=nx*ny*nz*rprec)
+do ip=1,npcon
+write(13,rec=ip) tavg_pcon(:nx,:ny,1:nz,ip)%pcon2
+enddo
+close(13)
+$endif
+
+
 open(unit=13, file=fname_tau, form='unformatted', convert=write_endian,        &
     access='direct', recl=nx*ny*nz*rprec)
 write(13,rec=1) tavg(:nx,:ny,1:nz)%txx
@@ -3706,6 +3839,10 @@ $endif
 allocate(rs(nx,ny,lbz:nz))
 rs = rs_compute(tavg , lbz)
 
+$if ($PPCON)
+allocate(rs_pcon(nx,ny,lbz:nz,npcon))
+rs_pcon = rs_compute_pcon(tavg_pcon,lbz)
+$endif
 ! Write binary data
 open(unit=13, file=fname_rs, form='unformatted', convert=write_endian,         &
     access='direct',recl=nx*ny*nz*rprec)
@@ -3716,6 +3853,17 @@ write(13,rec=4) rs(:nx,:ny,1:nz)%upwp
 write(13,rec=5) rs(:nx,:ny,1:nz)%vpwp
 write(13,rec=6) rs(:nx,:ny,1:nz)%upvp
 close(13)
+
+$if ($PPCON)
+
+open(unit=13, file=fname_rs_pcon, form='unformatted', convert=write_endian,         &
+    access='direct',recl=nx*ny*nz*rprec)
+do ip = 1,npcon
+write(13,rec=ip) rs_pcon(:nx,:ny,1:nz,ip)%pconp2
+enddo
+close(13)
+deallocate(rs_pcon)
+$endif
 
 deallocate(rs)
 
@@ -3836,6 +3984,12 @@ subroutine tavg_checkpoint()
 !
 use param, only : checkpoint_tavg_file, write_endian
 use stat_defs, only : tavg_total_time, tavg
+
+$if ($PPCON)
+use param, only : checkpoint_tavg_pcon_file
+use stat_defs, only : tavg_pcon
+$endif
+
 $if ($PPSGS)
 use param, only : checkpoint_tavg_sgs_file
 use stat_defs, only : tavg_sgs
@@ -3862,6 +4016,19 @@ write(1) tavg_total_time
 write(1) tavg
 close(1)
 
+$if ($PPCON)
+fname = checkpoint_tavg_pcon_file
+$if ($MPI)
+write(fname,'(A,A,I4)') TRIM(fname),'.c',2000+coord
+
+!call string_concat( fname, '.c', coord)
+$endif
+open(1, file=fname, action='write', position='rewind',form='unformatted',      &
+    convert=write_endian)
+write(1) tavg_total_time
+write(1) tavg_pcon
+close(1)
+$endif
 !$if ($PPSGS)
 !fname = checkpoint_tavg_sgs_file
 !$if ($MPI)

@@ -54,6 +54,18 @@ type tavg_t
      real(rprec) :: dudx, dudy, dudz, dvdx, dvdy, dvdz, dwdx, dwdy, dwdz
 end type tavg_t
 
+$if ($PPCON)
+type tavg_pcon_t
+        real(rprec) :: pcon
+        real(rprec) :: pcon2
+end type tavg_pcon_t
+
+type rs_pcon_t
+        real(rprec) :: pconp2
+end type rs_pcon_t
+
+$endif
+
 type rs_t
     real(rprec) :: up2, vp2, wp2, upvp, upwp, vpwp
 end type rs_t
@@ -103,6 +115,11 @@ type(zplane_t), allocatable, dimension(:) :: zplane
 
 type(tavg_t), allocatable, dimension(:,:,:) :: tavg
 type(tavg_t), allocatable, dimension(:) :: tavg_zplane
+
+$if ($PPCON)
+type(tavg_pcon_t), allocatable, dimension (:,:,:,:) :: tavg_pcon
+type(rs_pcon_t), allocatable, dimension (:,:,:,:) :: rs_pcon
+$endif
 
 type(rs_t), allocatable, dimension(:,:,:) :: rs
 type(rs_t), allocatable, dimension(:) :: rs_zplane, cnpy_zplane
@@ -157,6 +174,28 @@ c % upwp = a % uw - a % u_w * a % w   !!pj
 c % vpwp = a % vw - a % v_w * a % w   !!pj
 
 end function rs_compute
+
+$if ($PPCON)
+function rs_compute_pcon( a , lbz2) result(c)
+!*******************************************************************************
+implicit none
+integer, intent(in) :: lbz2
+type(tavg_pcon_t), dimension(:,:,lbz2:,:), intent(in) :: a
+type(rs_pcon_t), allocatable, dimension(:,:,:,:) :: c
+
+integer :: ubx, uby, ubz,ubpcon
+
+ubx=ubound(a,1)
+uby=ubound(a,2)
+ubz=ubound(a,3)
+ubpcon = ubound(a,4)
+allocate(c(ubx,uby,lbz2:ubz,ubpcon))
+
+c % pconp2 = a % pcon2 - a%pcon * a%pcon
+
+end function rs_compute_pcon
+
+$endif
 
 !#ifdef PPBUDGET
 !*******************************************************************************
