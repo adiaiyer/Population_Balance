@@ -17,9 +17,9 @@ public :: average_dim_select_flag, dim1_size, dim2_size,        &
 
 integer,parameter::num_hour_out=1
 !integer,parameter::base=nint(num_hour_out*3600/(dt*z_i/u_star)),nwrite=base
-integer,parameter::base=5,nwrite=base
+integer,parameter::base=10000,nwrite=base
 !integer,parameter::base=100,nwrite=base
-integer,parameter:: avg_base=1
+integer,parameter:: avg_base=100
 !!!!  io_spec=.true. output plan-averaged spectrum
 logical,parameter:: io_spec=.true.,output_fields_3d_flag=.false.
 !integer,parameter::spec_write_freqz=p_count/3, fields_3d_write_freqz=p_count*6
