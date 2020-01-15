@@ -298,7 +298,7 @@ logical,parameter :: checkpoint_data= .true.
 integer,parameter :: checkpoint_nskip = 3500
 
 character(*), parameter :: checkpoint_tavg_file = path//'tavg.out'
-
+character(*), parameter :: checkpoint_tavg_pcon_file = path//'tavg_pcon.out'
 logical :: tavg_calc = .true.
 integer,parameter :: tavg_nstart = 5 , tavg_nend = 5000000, tavg_nskip =5
 
@@ -338,7 +338,7 @@ logical,parameter :: periodicbcy=.false.
 
 
 ! Time step to start evolving pollen concentration field
-integer,parameter :: PCon_init=30000
+integer,parameter :: PCon_init=10
 
 ! Flag to specify bottom bounday condition
 ! lbcp=0  - prescribed surface pollen concentration
@@ -462,7 +462,7 @@ real(kind=rprec),dimension(npcon) ::  Q_src
 
 !AA Change ends here
 ! timesteps to begin and end point source
-integer,parameter :: ini_src=30000
+integer,parameter :: ini_src=10
 integer,parameter :: end_src=12000000
 
 
