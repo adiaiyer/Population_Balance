@@ -14,7 +14,7 @@ public
 $if ($MPI)
   $define $MPI_LOGICAL .true.
  ! $define $NPROC 32
-  $define $NPROC 48
+  $define $NPROC 24
 $else
   $define $MPI_LOGICAL .false.
   $define $NPROC 1
@@ -67,7 +67,7 @@ real (rprec), parameter :: TINYS = 1.e-30_rprec
 real(rprec),parameter::pi=3.1415926535897932384626433_rprec
 real(kind=rprec),parameter::L_x=1_rprec,L_y=1_rprec
 !real(kind=rprec),parameter::L_x=10._rprec,L_y=5._rprec
-real(rprec),parameter::z_i=1._rprec, L_z=2.5_rprec/nproc
+real(rprec),parameter::z_i=1._rprec, L_z=1._rprec/nproc
                             !--L_z is not nondimensionalized by z_i yet
 ! set the aspect ratio of the box, already nondimensional
 real(rprec),parameter::dz=L_z/z_i/(nz-1)
@@ -77,7 +77,7 @@ real(rprec),parameter::dx=L_x/nx,dy=L_y/ny
 !                3 hours = 108000 steps
 
 !!!!!!!! Changed by AA
-integer,parameter::nsteps=20 !simulation steps
+integer,parameter::nsteps=100000 !simulation steps
 !!!!!!! Ends Here
 
 !integer,parameter::nsteps=40000 !simulation steps
@@ -266,7 +266,7 @@ logical,parameter :: GABLS_diurnal_test=.FALSE.
 !--initlag = true to initialize cs, FLM & FMM; false to read from vel.out
 !logical, parameter :: inilag = .false.
 !logical,parameter :: initu=.TRUE.,initsc=.TRUE.,inilag=.FALSE.,interp=.TRUE.
-logical,parameter :: initu=.true.,initsc=.false.,inilag=.true.,interp=.TRUE.
+logical,parameter :: initu=.false.,initsc=.false.,inilag=.true.,interp=.TRUE.
 !logical,parameter :: initu=.TRUE.,initsc=.FALSE.,inilag=.TRUE.,interp=.FALSE.
 ! Added a new parameter - passive_scalar for passive scalars with bldngs
 logical,parameter :: passive_scalar=.false.,GABLS_test=.false.
@@ -300,7 +300,7 @@ integer,parameter :: checkpoint_nskip = 3500
 character(*), parameter :: checkpoint_tavg_file = path//'tavg.out'
 character(*), parameter :: checkpoint_tavg_pcon_file = path//'tavg_pcon.out'
 logical :: tavg_calc = .true.
-integer,parameter :: tavg_nstart = 5 , tavg_nend = 5000000, tavg_nskip =5
+integer,parameter :: tavg_nstart = 100000 , tavg_nend = 5000000, tavg_nskip =5
 
 
 !------xxxxxxxxx--POLLEN_PARAMETERS--xxxxxxxxx---------------
@@ -315,8 +315,8 @@ logical,parameter :: PCon_FLAG=.TRUE.
 
 ! Flag to initialize pollen concentration
 ! initPCon=.TRUE.  - read pollen concentration from vel_sc.out
-! initPCon=.FALSE. - initialize pollen concentration with zero
-logical,parameter :: initPCon=.true.
+! in          ((jy-yps)*dy)**2/b0_plume**2)**n_sup)/temp_jetitPCon=.FALSE. - initialize pollen concentration with zero
+logical,parameter :: initPCon=.false.
 
 ! Scale for pollen concentration (in grains/m3 or g/m3 or kg/m3)
 real(kind=rprec),parameter :: PCon_scale=1._rprec
@@ -338,7 +338,7 @@ logical,parameter :: periodicbcy=.false.
 
 
 ! Time step to start evolving pollen concentration field
-integer,parameter :: PCon_init=10
+integer,parameter :: PCon_init=10000000
 
 ! Flag to specify bottom bounday condition
 ! lbcp=0  - prescribed surface pollen concentration
@@ -394,7 +394,7 @@ real (rprec), parameter :: sigma=15.5e-3_rprec, dmin=14e-6_rprec, dmax=3000e-6_r
 !real (rprec), parameter ::d_diameter=(dmax-dmin)/(npcon-2._rprec)
 real (rprec), parameter :: ratio = 1._rprec/(npcon-1._rprec)
 real (rprec) , parameter :: d_diameter=(dmax/dmin)**ratio
-REAL(KIND=RPREC),parameter :: C1=14300
+REAL(KIND=RPREC),parameter :: C1=1
 integer,parameter :: jt_rand =2
 !AA End Here
 
@@ -462,7 +462,7 @@ real(kind=rprec),dimension(npcon) ::  Q_src
 
 !AA Change ends here
 ! timesteps to begin and end point source
-integer,parameter :: ini_src=10
+integer,parameter :: ini_src=10000000
 integer,parameter :: end_src=12000000
 
 
@@ -581,9 +581,9 @@ real (rprec), parameter :: ubm=0.1186_rprec/u_star
 !real (rprec), parameter :: ubm=11.86_rprec/u_star
 !DY ubm is the centerline velocity for the inner plume at the bottom boundary
 
-real (rprec), parameter :: b0_plume=0.75_rprec*dx/z_i
+real (rprec), parameter :: b0_plume= dx/z_i
 !DY b0_plume is the initial width of the inner plume at the bottom boundary
-
+real (rprec), parameter :: sigma_z = dz/z_i
 logical,parameter :: GAUSSIAN_SOURCE_2d_FLAG=.true.
 !DY if GAUSSIAN_SOURCE_FLAG=.true.: smoothly distribute Q_src by Gaussian filter with b0_plume in (x,y)
 integer,parameter :: N_GAU = 10._rprec

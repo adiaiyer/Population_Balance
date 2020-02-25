@@ -17,7 +17,7 @@ public :: average_dim_select_flag, dim1_size, dim2_size,        &
 
 integer,parameter::num_hour_out=1
 !integer,parameter::base=nint(num_hour_out*3600/(dt*z_i/u_star)),nwrite=base
-integer,parameter::base=5,nwrite=base
+integer,parameter::base=30000,nwrite=base
 !integer,parameter::base=100,nwrite=base
 integer,parameter:: avg_base=1
 !!!!  io_spec=.true. output plan-averaged spectrum
@@ -805,13 +805,13 @@ implicit none
 
 character (64) :: fname
 
-if (S_FLAG .and. Pcon_FLAG) then
+if (S_FLAG .or. Pcon_FLAG) then
   write(fname,'(A,I7.7,A,I4.4,A)')path_op//'vel_pcon_',jt_total,'_',2000+coord,'.out'
 endif
 
 open(unit=2000+coord,file=fname,form='unformatted')
 
-if(S_FLAG .and. PCON_FLAG) then
+if(S_FLAG .or. PCON_FLAG) then
   write(2000+coord)u(:,:,1:nz),v(:,:,1:nz),w(:,:,1:nz),Pcon(:,:,1:nz,1:npcon),&
          dissip(:,:,1:nz),breakage_freq(:,:,1:nz,1:npcon),Re(:,:,1:nz,1:npcon),&
        Rhs_pbe(:,:,1:nz,1:npcon),Rhs_Pcon(:,:,1:nz,1:npcon),Cs_opt2

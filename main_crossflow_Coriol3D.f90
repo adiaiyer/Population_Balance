@@ -704,87 +704,68 @@ do jt=1,nsteps
    !  we add force (mean press forcing) here so that u^(*) is as close
    !  to the final velocity as possible
 !AA START HERE
+if (Jet) then 
+   do jz=1,nz-1
+    ordinate = coord*(nz-1)+jz
+    if ((ordinate .GT. zps-2) .AND. (ordinate .LT. zps+2) ) then 
+!       print
+!       *,'ordinate,jz,beforeRhsz(xps,yps,jz),coord',ordinate,jz,Rhsz(xps,yps,jz),coord
+    endif
+  enddo
+endif
 
-if (JET) THEN !LV1
-!  do jz=1,nz-1
-!    ordinate = coord*(nz-1)+jz
-!    if ((ordinate .GT. zps-2) .AND. (ordinate .LT. zps+2) .AND. (ordinate .ne. zps)) then
-!      RHSZ(XPS,YPS,jz)=RHSZ(XPS,YPS,jz)-(C1/2)/u_star**2
-!    endif
-!    if (ordinate .eq. zps) then
-!      RHSZ(XPS,YPS,jz)=RHSZ(XPS,YPS,jz) -C1/u_star**2      
-!     ! RHSZ(XPS-1,YPS-1,jz) = RHSZ(XPS-1,YPS-1,jz) -  
-!    endif
-!  enddo
-
-
+if (JET) THEN !LV1 
   ncpu_source = int(zps/(nz-1))
   zps_local = zps-ncpu_source*(nz-1)+1
-
   temp_jet=0._rprec
-   do jy=1,ny
-     do jx=1,nx
-         temp_jet = temp_jet +exp(-(((jx-xps)*dx)**2+((jy-yps)*dy)**2)**(n_sup/2)/(2._rprec*b0_plume**n_sup))&
-                                                         /(2._rprec*pi*(b0_plume/dx)**2)
-    enddo
-   enddo
- 
-  if (USE_MPI .and. coord == ncpu_source) then !LV2
-    if(jt_total .le. jet_rand_final) then !LV3
+
+  if (USE_MPI .and. coord == ncpu_source) then !LV2 
+  do jy=1,ny
+  do jx=1,nx
+  do jz=1,nz
+    temp_jet = temp_jet +dx*dy*dz*exp(-0.5_rprec*((jz-zps_local)*dz/(sigma_z**2))**(n_sup))*&
+                exp(-0.5_rprec*(((jx-xps)*dx)**2+((jy-yps)*dy)**2/b0_plume**2)**n_sup)
+  enddo
+  enddo
+  enddo
+    if(jt_total .le. jet_rand_final) then !LV3 
       do jy=1,ny
       do jx=1,nx
-        if(mod(jt_total,jt_rand)==0) then
-          RHSz(jx,jy,zps_local) = RHSz(jx,jy,zps_local) - 0.7_rprec*C1*(z_i/u_star**2)*exp(-(((jx-xps)*dx)**2+&
-                                                       ((jy-yps)*dy)**2)**(n_sup/2)/(2._rprec*b0_plume**n_sup))&
-                                           /(2._rprec*pi*(b0_plume/dx)**2)/temp_jet+ 1.5_rprec*ran_num(jt)/u_star**2 
-          RHSz(jx,jy,zps_local-1) = RHSz(jx,jy,zps_local-1) -0.15_rprec*C1*(z_i/u_star**2)*exp(-(((jx-xps)*dx)**2+&
-                                                      ((jy-yps)*dy)**2)**(n_sup/2)/(2._rprec*b0_plume**n_sup))&
-                                           /(2._rprec*pi*(b0_plume/dx)**2)/temp_jet+ 1.5_rprec*ran_num(jt)/u_star**2
-          RHSz(jx,jy,zps_local+1) = RHSz(jx,jy,zps_local+1)-0.15_rprec*C1*(z_i/u_star**2)*exp(-(((jx-xps)*dx)**2+&
-                                                      ((jy-yps)*dy)**2)**(n_sup/2)/(2._rprec*b0_plume**n_sup))&
-                                           /(2._rprec*pi*(b0_plume/dx)**2)/temp_jet+1.5_rprec*ran_num(jt)/u_star**2
-    
-          RHSx(jx,jy,zps_local) = RHSx(jx,jy,zps_local) + ran_num(jt)/u_star**2
-      
-          RHSy(jx,jy,zps_local) = RHSy(jx,jy,zps_local) + ran_num(jt)/u_star**2
+      do jz = 1,nz 
+        if(mod(jt_total,jt_rand)==0) then 
+          RHSz(jx,jy,jz) = RHSz(jx,jy,jz) - C1*(z_i/u_star**2)*exp(-((jz-zps_local)*dz/sigma_z**2)**(n_sup))*exp(-(((jx-xps)*dx)**2+&
+                                                       ((jy-yps)*dy)**2/b0_plume**2)**n_sup)/temp_jet+&
+                               0.05_rprec*C1*(z_i/u_star**2)*exp(-((jz-zps_local)*dz/sigma_z**2)**(n_sup))*exp(-(((jx-xps)*dx)**2+&
+                                 ((jy-yps)*dy)**2/b0_plume**2)**n_sup)/temp_jet*ran_num(jt)
+
+          RHSx(jx,jy,zps_local) = RHSx(jx,jy,zps_local) !+ ran_num(jt)/u_star**2
+
+          RHSy(jx,jy,zps_local) = RHSy(jx,jy,zps_local) !+ ran_num(jt)/u_star**2
 
        else
-     
-          RHSz(jx,jy,zps_local) = RHSz(jx,jy,zps_local) - 0.7_rprec*C1*(z_i/u_star**2)*exp(-(((jx-xps)*dx)**2+&
-                                                       ((jy-yps)*dy)**2)**(n_sup/2)/(2._rprec*b0_plume**n_sup))&
-                                           /(2._rprec*pi*(b0_plume/dx)**2)/temp_jet 
-          RHSz(jx,jy,zps_local-1) = RHSz(jx,jy,zps_local-1) -0.15_rprec*C1*(z_i/u_star**2)*exp(-(((jx-xps)*dx)**2+&
-                                                      ((jy-yps)*dy)**2)**(n_sup/2)/(2._rprec*b0_plume**n_sup))&
-                                           /(2._rprec*pi*(b0_plume/dx)**2)/temp_jet
-          RHSz(jx,jy,zps_local+1) = RHSz(jx,jy,zps_local+1)-0.15_rprec*C1*(z_i/u_star**2)*exp(-(((jx-xps)*dx)**2+&
-                                                      ((jy-yps)*dy)**2)**(n_sup/2)/(2._rprec*b0_plume**n_sup))&
-                                           /(2._rprec*pi*(b0_plume/dx)**2)/temp_jet
 
+          RHSz(jx,jy,jz) = RHSz(jx,jy,jz) -  C1*(z_i/u_star**2)*exp(-((jz-zps_local)*dz/sigma_z**2)**(n_sup))*exp(-(((jx-xps)*dx)**2+&
+                                                        ((jy-yps)*dy)**2/b0_plume**2)**n_sup)/temp_jet
        endif
       enddo
       enddo
-     
+      enddo
 
     else
 
+     do jz = 1,nz
       do jy=1,ny
       do jx=1,nx
-      
-          RHSz(jx,jy,zps_local) = RHSz(jx,jy,zps_local) - 0.7_rprec*C1*(z_i/u_star**2)*exp(-(((jx-xps)*dx)**2+&
-                                                       ((jy-yps)*dy)**2)**(n_sup/2)/(2._rprec*b0_plume**n_sup))&
-                                           /(2._rprec*pi*(b0_plume/dx)**2)/temp_jet 
-          RHSz(jx,jy,zps_local-1) = RHSz(jx,jy,zps_local-1) -0.15_rprec*C1*(z_i/u_star**2)*exp(-(((jx-xps)*dx)**2+&
-                                                      ((jy-yps)*dy)**2)**(n_sup/2)/(2._rprec*b0_plume**n_sup))&
-                                           /(2._rprec*pi*(b0_plume/dx)**2)/temp_jet
-          RHSz(jx,jy,zps_local+1) = RHSz(jx,jy,zps_local+1)-0.15_rprec*C1*(z_i/u_star**2)*exp(-(((jx-xps)*dx)**2+&
-                                                      ((jy-yps)*dy)**2)**(n_sup/2)/(2._rprec*b0_plume**n_sup))&
-                                           /(2._rprec*pi*(b0_plume/dx)**2)/temp_jet
 
+          RHSz(jx,jy,jz) = RHSz(jx,jy,jz) - C1*(z_i/u_star**2)*exp(-((jz-zps_local)*dz/sigma_z**2)**(n_sup))*exp(-(((jx-xps)*dx)**2+&
+                                  ((jy-yps)*dy)**2/b0_plume**2)**n_sup)/temp_jet
+      enddo                                  
       enddo
       enddo
     endif !LV3
   endif !LV2
 endif   !LV1
+
   if (use_mean_p_force) then
      force = mean_p_force
   else
