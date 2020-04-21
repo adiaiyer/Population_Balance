@@ -14,8 +14,8 @@ public
 $if ($MPI)
   $define $MPI_LOGICAL .true.
  ! $define $NPROC 32
-  $define $NPROC 48
-$else
+  $define $NPROC 96
+  $else
   $define $MPI_LOGICAL .false.
   $define $NPROC 1
 $endif
@@ -77,7 +77,7 @@ real(rprec),parameter::dx=L_x/nx,dy=L_y/ny
 !                3 hours = 108000 steps
 
 !!!!!!!! Changed by AA
-integer,parameter::nsteps=30000 !simulation steps
+integer,parameter::nsteps=11000 !simulation steps
 !!!!!!! Ends Here
 
 !integer,parameter::nsteps=40000 !simulation steps
@@ -97,7 +97,7 @@ real(rprec),parameter :: u_star =1._rprec,Pr = 0.4_rprec
 !real(rprec),parameter::u_star=sqrt(ug_dim**2+vg_dim**2),Pr=.4_rprec
 
 !!!!!!! Changed by AA
-real(rprec),parameter::dt_dim=0.0001_rprec !dimensional time step in seconds
+real(rprec),parameter::dt_dim=0.00005_rprec !dimensional time step in seconds
 !!!!!!! Ends here
 
 !real(rprec),parameter::dt_dim=0.2_rprec
@@ -266,7 +266,7 @@ logical,parameter :: GABLS_diurnal_test=.FALSE.
 !--initlag = true to initialize cs, FLM & FMM; false to read from vel.out
 !logical, parameter :: inilag = .false.
 !logical,parameter :: initu=.TRUE.,initsc=.TRUE.,inilag=.FALSE.,interp=.TRUE.
-logical,parameter :: initu=.false.,initsc=.false.,inilag=.true.,interp=.TRUE.
+logical,parameter :: initu=.true.,initsc=.false.,inilag=.true.,interp=.TRUE.
 !logical,parameter :: initu=.TRUE.,initsc=.FALSE.,inilag=.TRUE.,interp=.FALSE.
 ! Added a new parameter - passive_scalar for passive scalars with bldngs
 logical,parameter :: passive_scalar=.false.,GABLS_test=.false.
@@ -295,12 +295,12 @@ real(kind=rprec),parameter::cap_thick=80._rprec, z_decay=1._rprec
 ! checkpoint_nskip timesteps. Used in io.f90
 
 logical,parameter :: checkpoint_data= .true.
-integer,parameter :: checkpoint_nskip = 10000
+integer,parameter :: checkpoint_nskip = 4000
 
 character(*), parameter :: checkpoint_tavg_file = path//'tavg.out'
 character(*), parameter :: checkpoint_tavg_pcon_file = path//'tavg_pcon.out'
 logical :: tavg_calc = .true.
-integer,parameter :: tavg_nstart = 40000 , tavg_nend = 5000000, tavg_nskip =300
+integer,parameter :: tavg_nstart = 100000 , tavg_nend = 5000000, tavg_nskip =300
 
 
 !------xxxxxxxxx--POLLEN_PARAMETERS--xxxxxxxxx---------------
@@ -316,7 +316,7 @@ logical,parameter :: PCon_FLAG=.TRUE.
 ! Flag to initialize pollen concentration
 ! initPCon=.TRUE.  - read pollen concentration from vel_sc.out
 ! initPCon=.FALSE. - initialize pollen concentration with zero
-logical,parameter :: initPCon=.false.
+logical,parameter :: initPCon=.true.
 
 ! Scale for pollen concentration (in grains/m3 or g/m3 or kg/m3)
 real(kind=rprec),parameter :: PCon_scale=1._rprec
@@ -338,7 +338,7 @@ logical,parameter :: periodicbcy=.false.
 
 
 ! Time step to start evolving pollen concentration field
-integer,parameter :: PCon_init=10
+integer,parameter :: PCon_init=40000
 
 ! Flag to specify bottom bounday condition
 ! lbcp=0  - prescribed surface pollen concentration
@@ -394,7 +394,7 @@ real (rprec), parameter :: sigma=7.75e-3_rprec, dmin=14e-6_rprec, dmax=3000e-6_r
 !real (rprec), parameter ::d_diameter=(dmax-dmin)/(npcon-2._rprec)
 real (rprec), parameter :: ratio = 1._rprec/(npcon-1._rprec)
 real (rprec) , parameter :: d_diameter=(dmax/dmin)**ratio
-REAL(KIND=RPREC),parameter :: C1=14300
+REAL(KIND=RPREC),parameter :: C1=18500
 integer,parameter :: jt_rand =2
 !AA End Here
 
@@ -462,7 +462,7 @@ real(kind=rprec),dimension(npcon) ::  Q_src
 
 !AA Change ends here
 ! timesteps to begin and end point source
-integer,parameter :: ini_src=10
+integer,parameter :: ini_src=40000
 integer,parameter :: end_src=12000000
 
 
