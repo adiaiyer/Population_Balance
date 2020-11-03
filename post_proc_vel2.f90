@@ -30,21 +30,21 @@ use types,only:rprec
   INTEGER,PARAMETER                           :: base=350
   INTEGER,PARAMETER                           :: npcon=20
   INTEGER,PARAMETER                          :: lh=nx/2+1,ld=2*lh
-  INTEGER,PARAMETER                          :: jt_start =215
-  INTEGER,PARAMETER                          :: jt_end = 460
+  INTEGER,PARAMETER                          :: jt_start =20
+  INTEGER,PARAMETER                          :: jt_end = 85
   INTEGER,PARAMETER                           :: nt=jt_end-jt_start+1
   REAL(rprec),PARAMETER                      :: z_i=1._rprec
-  REAL(rprec),PARAMETER                      :: L_z = 2.5/nproc
+  REAL(rprec),PARAMETER                      :: L_z = 1.5/nproc
   REAL(rprec),PARAMETER                      :: L_x=1._rprec
   REAL(rprec),PARAMETER                      :: L_y = 1_rprec
   REAL(rprec),PARAMETER                      :: u_star = 1
   REAL(rprec),PARAMETER                      :: dt_dim = 0.0001
   REAL(rprec),PARAMETER                      :: dt = dt_dim*u_star/z_i
   REAL(rprec),PARAMETER                      :: T_scale = 300.
-  REAL(rprec),dimension(:,:,:),allocatable   :: u,v,w,dissip,u0,v0,w0,dissip0
+  REAL(rprec),dimension(:,:,:),allocatable   ::  u,v,w,dissip,u0,v0,w0,dissip0,avg_w
   REAL(rprec),dimension(:,:,:,:),allocatable ::  Pcon,breakage_freq,Re,tot_vol,tot_area
   Real(rprec),dimension(:,:,:,:),allocatable :: Pcon0,avg_pcon
-  Real(rprec),dimension(npcon)               :: diameter,d_d
+  Real(rprec),dimension(npcon)               :: diameter,d_d,factor
   Real(rprec),dimension(npcon-1)               :: d_half
   Real(rprec),dimension(npcon)               :: dsd
   CHARACTER(len=64)                           ::  file,path,path1i,format_spec,fname
@@ -65,17 +65,24 @@ real(rprec)                       ::               d32,dx=L_x/nx,dy=L_y/ny,dz=L_
 !   allocate(breakage_freq(nx,ny,1:nz_tot,npcon),Re(nx,ny,1:nz_tot,npcon))
 !   allocate(dissip(nx,ny,1:nz_tot))
 format_spec = '(I6,2F14.7)'
-   allocate(Pcon0(ld,ny,1:nz,npcon),Pcon(ld,ny,1:nz_tot,npcon),tot_area(nx,ny,1:nz_tot,npcon),tot_vol(ld,ny,1:nz_tot,npcon))
+   allocate(Pcon0(ld,ny,1:nz,npcon),Pcon(nx,ny,1:nz_tot,npcon),tot_area(nx,ny,1:nz_tot,npcon),tot_vol(nx,ny,1:nz_tot,npcon))
     print *,"hello"
    allocate(u0(ld,ny,1:nz),v0(ld,ny,1:nz),w0(ld,ny,1:nz),dissip0(ld,ny,1:nz),&
   u(ld,ny,1:nz_tot),v(ld,ny,1:nz_tot),w(ld,ny,1:nz_tot),dissip(ld,ny,1:nz_tot),avg_pcon(nx,ny,1:nz_tot,npcon))
+allocate(avg_w(nx,ny,1:nz_tot))
+avg_w = 0._rprec
 allocate(tot(310-jx+1,npcon-1))
-   open(21,File='diameter.dat')
-   do ip=1,npcon
-     read(21,*) diameter(ip)
-   enddo
+!   open(21,File='diameter.dat')
+!   do ip=1,npcon
+!     read(21,*) diameter(ip)
+!   enddo
    close(21)
 
+!   open(21,File='factor.dat')
+!   do ip=1,npcon
+!     read(21,*) factor(ip)
+!   enddo
+!   close(21)
 allocate(weight_x(nx),weight_y(ny),weight_z(nz_tot))
 
   weight_y = dy/2
@@ -88,9 +95,9 @@ allocate(weight_x(nx),weight_y(ny),weight_z(nz_tot))
  path = 'post_proc_output/' 
 !   write(file,'(A)') "pcon_050000.out"
 open(10,file='tot_vol.dat')
-!jt= 460
-!    do jt=jt_start,jt_end
-      jt_total=88000
+!jt= 40
+    do jt=jt_start,jt_end
+      jt_total=jt*base
     do ip=1,nproc
       write(file,'(A,A,I6.6,A,I3.3,A)')TRIM(dir),'vel_pcon_0',jt_total,'_2',ip-1,'.out'
       open(unit=2000+ip,FILE=file,form='unformatted')
@@ -100,15 +107,24 @@ open(10,file='tot_vol.dat')
       u(:,:,nzs+1:nzs+nz) = u0(:,:,1:nz)
       v(:,:,nzs+1:nzs+nz) = v0(:,:,1:nz)
       w(:,:,nzs+1:nzs+nz) = w0(:,:,1:nz)      
-      dissip(:,:,nzs+1:nzs+nz) = dissip0(:,:,1:nz)
-      Pcon(:,:,nzs+1:nzs+nz,1:npcon) = Pcon0(:,:,1:nz,1:npcon)
-      close(2000+ip)
+!      dissip(:,:,nzs+1:nzs+nz) = dissip0(:,:,1:nz)
+!      Pcon(:,:,nzs+1:nzs+nz,1:npcon) = Pcon0(:,:,1:nz,1:npcon)
+!      close(2000+ip)
    enddo
-!  print *,"Opened files,timestep=",jt_total
+  print *,"Opened files,timestep=",jt_total
 
+write(*,*) maxval(-w)
 
+avg_w = avg_w + w(1:nx,1:ny,1:nz_tot)/nt
+enddo
+505 format(23e15.7)
+
+open(15,file='cent_vel.dat')
+do jz=1,nz_tot
+        write(15,505) -avg_w(xps,yps,jz)
+        enddo
 !inquire(iolength=reclen)u(1:nx,1:ny,1:nz_tot)
-!write(fname,'(A,A)')TRIM(PATH), "avg_pcon_342_469.out"
+!write(fname,'(A,A)')TRIM(PATH), "avg_pcon_330_485.out"
 !inquire(FILE = fname,EXIST=file_exists)
 !
 !if(file_exists) then
@@ -125,17 +141,16 @@ open(10,file='tot_vol.dat')
 ! !  read(20) u(:,:,1:nz_tot),v(:,:,1:nz_tot),w(:,:,1:nz_tot),PCon(:,:,1:nz_tot,:),&
 ! !           dissip(:,:,1:nz_tot)
 !  close(20)
-
 !  print *, maxval(-dissip(55,:,:))*u_star**3,maxloc(-dissip(55,:,:)),&
 !            maxval(-dissip(:,:,290:310))*u_star**3,maxloc(-dissip(:,:,290:310)),&
 !            maxval(-dissip(145,:,168))*u_star**3,maxloc(-dissip(145,:,168))
 !!   write(*,*) maxval(pcon(:,:,:,1)), maxloc(pcon(:,:,:,1))
 !  
-     do ip=1,npcon
-     tot_vol(:,:,:,ip) = pi/6_rprec*pcon(:,:,:,ip)*diameter(ip)**3_rprec
-!     write(*,*) maxval(tot_vol(:,:,:,ip))
-     enddo
-     half_sum = sum(tot_vol(1:nx,:,150:zps+2,:))
+!     do ip=1,npcon
+!     tot_vol(:,:,:,ip) = pi/6_rprec*pcon(:,:,:,ip)*factor(ip)*diameter(ip)**3_rprec
+!!     write(*,*) maxval(tot_vol(:,:,:,ip))
+!     enddo
+!     half_sum = sum(tot_vol(1:nx,:,150:zps+2,:))
  !   write(10,format_spec) jt_total, sum(tot_vol),half_sum
 !    enddo    
 !   close(10)
@@ -161,7 +176,6 @@ open(10,file='tot_vol.dat')
 !
 !path ='post_proc_output/'
 !!
-505 format(23e15.7)
 !write(file,'(A,A)') TRIM(PATH) , 'y_cm.dat'
 !open(unit=22,FILE=file,status='unknown')
 !
@@ -186,77 +200,90 @@ open(10,file='tot_vol.dat')
 !
 !  ! write(*,*)  sum(tot_vol(1:250,:,zps-4,:))*maxval(-w(:,:,zps-4)*u_star), sum(tot_vol(1:250,:,zps-8,:))&
 !!*maxval(-w(:,:,zps-8)*u_star) 
-   d_half = (diameter(2:npcon)+ diameter(1:npcon-1))/2_rprec
-   d_d(1) = (d_half(1)-diameter(1))*2
-   d_d(npcon) = (diameter(npcon)-d_half(npcon-1))*2
-   d_d(2:npcon-1) = d_half(2:npcon-1) - d_half(1:npcon-2)
-   d_d = d_d*1.e6_rprec
-   jx_start = xps-2
-   jx_end   = xps+2
-   jy_start = yps-2
-   jy_end   = yps+2
+!   d_half = (diameter(2:npcon)+ diameter(1:npcon-1))/2_rprec
+!   d_d(1) = (d_half(1)-diameter(1))*2
+!   d_d(npcon) = (diameter(npcon)-d_half(npcon-1))*2
+!   d_d(2:npcon-1) = d_half(2:npcon-1) - d_half(1:npcon-2)
+!   d_d = d_d*1.e6_rprec
+!   jx_start = xps-2
+!   jx_end   = xps+2
+!   jy_start = yps-2
+!   jy_end   = yps+2
 !   jz_start = 168
 !   jz_end   = 178
 
-  do ip=1,npcon
-!    tot_vol(:,:,:,ip) = pi/6_rprec*pcon(1:nx,:,:,ip)*diameter(ip)**3_rprec
-    tot_area(:,:,:,ip) = pi*pcon(1:nx,:,:,ip)*diameter(ip)**2_rprec
-  enddo
-do  jz=30,300,5 
-
-!do jx =xps,310
-!tot(jx-xps+1,1)= sum(tot_vol(jx,jy_start:jy_end,jz_start:jz_end,1))&
-!                  /sum(tot_vol(jx,jy_start:jy_end,jz_start:jz_end,1:npcon-1))
-!    do ip=2,npcon-1
-!      tot(jx-xps+1,ip) = tot(jx-xps+1,ip-1) +sum(tot_vol(jx,jy_start:jy_end,jz_start:jz_end,ip))&
-!                                       /sum(tot_vol(jx,jy_start:jy_end,jz_start:jz_end,1:npcon-1))
-!        if(tot(jx-xps+1,ip) .ge. 0.5_rprec)  then
-!          d50(jx-xps+1) = diameter(ip-1) + (diameter(ip)-diameter(ip-1))*(0.5-tot(jx-xps+1,ip-1))&
-!                                             /(tot(jx-xps+1,ip)-tot(jx-xps+1,ip-1))
-!          exit
-!        endif 
-!    enddo
-!enddo
+!   open(unit=21,FILE='d32_centerline_2n.dat',status='unknown',position='append',action='write')
+!  do ip=1,npcon
+!    tot_area(:,:,:,ip) = pi*pcon(1:nx,:,:,ip)*factor(ip)*diameter(ip)**2_rprec
+!  enddo
+!do  jz=180,328
 !
-!write(file,'(A,A,I3.3,A)') TRIM(PATH) , "d50_", int((jz_end-5)*100/384),".dat"
-!open(unit=24,FILE=file,status='unknown')
-!write(24,*)'variables=x,d50'
-!write(24,*) 'zone t="',1,'"i=',310-xps+1,'f=point'
+!!do jx =xps,310
+!!tot(jx-xps+1,1)= sum(tot_vol(jx,jy_start:jy_end,jz_start:jz_end,1))&
+!!                  /sum(tot_vol(jx,jy_start:jy_end,jz_start:jz_end,1:npcon-1))
+!!    do ip=2,npcon-1
+!!      tot(jx-xps+1,ip) = tot(jx-xps+1,ip-1) +sum(tot_vol(jx,jy_start:jy_end,jz_start:jz_end,ip))&
+!!                                       /sum(tot_vol(jx,jy_start:jy_end,jz_start:jz_end,1:npcon-1))
+!!        if(tot(jx-xps+1,ip) .ge. 0.5_rprec)  then
+!!          d50(jx-xps+1) = diameter(ip-1) + (diameter(ip)-diameter(ip-1))*(0.5-tot(jx-xps+1,ip-1))&
+!!                                             /(tot(jx-xps+1,ip)-tot(jx-xps+1,ip-1))
+!!          exit
+!!        endif 
+!!    enddo
+!!enddo
+!!
+!!write(file,'(A,A,I3.3,A)') TRIM(PATH) , "d50_", int((jz_end-5)*100/384),".dat"
+!!open(unit=24,FILE=file,status='unknown')
+!!write(24,*)'variables=x,d50'
+!!write(24,*) 'zone t="',1,'"i=',310-xps+1,'f=point'
+!!   
+!!do jx = xps,310
+!!  write(24,505) (jx-1)*l_x/nx,d50(jx-xps+1)
+!!enddo
+!!
+!!close(24)
+!!
+!
+!!   jx_start = 166
+!!   jx_end   = 167
+!!   jy_start = yps
+!!   jy_end   = yps
+!!   jz_start = 172
+!!   jz_end   = 172
+!!   counter=1
+!!
+!!do jz = 150,300,20
+!
+!d32 = 0._rprec
+!
+!do jx=xps-1,xps+1
+!do jy = yps-1,yps+1   
+!     d32 = d32 +  6 * sum(tot_vol(jx,jy,jz,1:npcon)) / &
+!                           sum(tot_area(jx,jy,jz,1:npcon))
+!enddo
+!enddo
+!d32 = d32/size(pcon(xps-1:xps+1,yps-1:yps+1,jz,1))
+!     do ip=1,npcon
+!      
+!       dsd(ip) =sum(pcon(jx_start:jx_end,jy_start:jy_end,jz,ip))&
+!                      /size(pcon(jx_start:jx_end,jy_start:jy_end,jz,ip))
+!     enddo
+!   write(file,'(A,A,A)')TRIM(path), "dsd_z_centerline_2n_nf",".dat"
 !   
-!do jx = xps,310
-!  write(24,505) (jx-1)*l_x/nx,d50(jx-xps+1)
-!enddo
-!
-!close(24)
-!
-
-!   jx_start = 166
-!   jx_end   = 167
-!   jy_start = yps
-!   jy_end   = yps
-!   jz_start = 172
-!   jz_end   = 172
-!   counter=1
-!
-!do jz = 150,300,20
-!     d32 =  6 * sum(tot_vol(xps-2:xps+2,yps-2:yps+2,jz,1:npcon)) / &
-!                           sum(tot_area(xps-2:xps+2,yps-2:yps+2,jz,1:npcon))
-     do ip=1,npcon
-      
-       dsd(ip) =sum(pcon(jx_start:jx_end,jy_start:jy_end,jz,ip))&
-                      /size(pcon(jx_start:jx_end,jy_start:jy_end,jz,ip))
-     enddo
-   write(file,'(A,A,A)')TRIM(path), "dsd_z_centerline_2",".dat"
-   
-!   open(unit=21,FILE='d32_centerline_2.dat',status='unknown',position='append',action='write')
 !   write(21,505) (zps-jz)*2.5/384,d32
-
- !   close(21)
-   open(20,FILE=file,status='unknown',position = 'append',action = 'write')
-     write(20,505)  (zps-jz)*2.5*100/385,(dsd(ip)/d_d(ip),ip=1,npcon)
-! 
-   enddo
-   close(20)
+!
+!   open(20,FILE=file,status='unknown',position = 'append',action = 'write')
+!     write(20,505)  (zps-jz)*2.5*100/385,(dsd(ip)/d_d(ip),ip=1,npcon)
+!! 
+!   enddo
+!
+!   d32 = 6 * sum(tot_vol(xps-1,yps-1,329,1:npcon)) / &    
+!                  sum(tot_area(xps-1,yps-1,329,1:npcon))
+!
+!   open(unit=21,FILE='d32_centerline_2n.dat',status='unknown',position='append',action='write')
+!   write(21,505) (zps-jz)*2.5/384,d32
+!   close(20)
+!   close(21)
 !do jx =xps,310
 !tot(jx-xps+1,1)=sum(tot_vol(jx,jy_start:jy_end,jz_start:jz_end,1))/sum(tot_vol(jx,jy_start:jy_end,jz_start:jz_end,1:npcon-1))
 !    do ip=2,npcon-1
