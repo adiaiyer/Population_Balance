@@ -29,6 +29,9 @@ ifeq ($(USE_PPCON),yes)
   FPP += -DPPCON
 endif
 
+ifeq ($(USE_PPSGS),yes)
+  FPP += -DPPSGS
+endif
 
 ifeq ($(WRITE_ENDIAN),LITTLE)
   FPP += -DWRITE_LITTLE_ENDIAN
