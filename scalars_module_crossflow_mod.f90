@@ -91,7 +91,7 @@ integer,save::time_ind
 
 REAL(kind=rprec),DIMENSION(ld,ny,$lbz:nz)  :: Kc_t	    ! 3D matrix of SGS diffusivity for pollen
 REAL(kind=rprec),DIMENSION(ld,ny,$lbz:nz)  :: dPCondz	    ! Vertical derivatives (needed also for output)
-REAL(kind=rprec),DIMENSION(ld,ny,$lbz:nz,npcon)  :: RHS_PConf,RHS_PCon ! RHS for PCon equation
+REAL(kind=rprec),DIMENSION(ld,ny,$lbz:nz,npcon)  :: RHS_PConf,RHS_PCon,nudPCondx,nudPCondy ! RHS for PCon equation
 REAL(kind=rprec),DIMENSION(ld,ny,$lbz:nz)  :: sgs_PCon3     ! Defines the sgs vertical flux
 REAL(kind=rprec),DIMENSION(ld,ny,$lbz:nz)  :: res_PCon3     ! Defines the resolved vertical flux
 REAL(kind=rprec),DIMENSION(ld,ny,$lbz:nz)  :: sgs_PCon1     ! Defines the sgs x-direction flux
@@ -1978,7 +1978,7 @@ integer::jx,jy
 
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !AA Added by Aditya Aiyer for Population Balance Equations
-
+!if PBE_FLAG then
   real(kind=rprec),dimension(npcon)                :: Oh,Ohl,a,b,c,d,e,alpha
   real(kind=rprec),dimension(npcon,npcon)          :: beta
   real(kind=rprec), dimension(ld,ny,$lbz:nz,npcon) ::fit,tau_c,Rhs_pbe_in,check_neg,Re1,fitl
@@ -1987,7 +1987,8 @@ integer::jx,jy
   integer                                          :: counter_pbe,m,ip
   real(kind=rprec),dimension(npcon)                :: dcube,dsquare
   real(kind=rprec),dimension(ld,ny,$lbz:nz)        :: ones
-!  integer                           :: ipcon
+!  endif
+  !  integer                           :: ipcon
 !AA End Here
 !++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -2076,7 +2077,7 @@ endif
         u_int0(i,j,k)=SUM(matrix_x(:,i)*dvector_x(:))
       END DO
       
-    END DO
+  END DO
   END DO
   
   ! Use periodicity
@@ -3607,6 +3608,7 @@ $endif
       DO i=2,nx-1
   	RHS(i,j,k,ipcon)=RHS(i,j,k,ipcon)+(1._rprec/dx**2)*(((Kc_t(i,j,k)+Kc_t(i+1,j,k))/2._rprec)*(scalar(i+1,j,k,ipcon)-scalar(i,j,k,ipcon)) &
 	                                       -((Kc_t(i,j,k)+Kc_t(i-1,j,k))/2._rprec)*(scalar(i,j,k,ipcon)-scalar(i-1,j,k,ipcon)))
+        nudPCondx(i,j,k,ipcon) = -(1._rprec/dx)*((Kc_t(i+1,j,k)+Kc_t(i,j,k)/2._rprec)*(scalar(i+1,j,k,ipcon)-scalar(i,j,k,ipcon)))  
       END DO
       RHS(1,j,k,ipcon)=RHS(1,j,k,ipcon)+(1._rprec/dx**2)*(((Kc_t(1,j,k)+Kc_t(2,j,k))/2._rprec)*(scalar(2,j,k,ipcon)-scalar(1,j,k,ipcon)) &
 	                                     -((Kc_t(1,j,k)+Kc_t(nx,j,k))/2._rprec)*(scalar(1,j,k,ipcon)-ghost_x0(j,k)))
@@ -3621,6 +3623,7 @@ $endif
       DO j=2,ny-1
   	RHS(i,j,k,ipcon)=RHS(i,j,k,ipcon)+(1._rprec/dy**2)*(((Kc_t(i,j,k)+Kc_t(i,j+1,k))/2._rprec)*(scalar(i,j+1,k,ipcon)-scalar(i,j,k,ipcon)) &
 	                                       -((Kc_t(i,j,k)+Kc_t(i,j-1,k))/2._rprec)*(scalar(i,j,k,ipcon)-scalar(i,j-1,k,ipcon)))
+        nudPCondy(i,j,k,ipcon) = -(1._rprec/dy)*((Kc_t(i,j+1,k)+Kc_t(i,j,k)/2._rprec)*(scalar(i,j+1,k,ipcon)-scalar(i,j,k,ipcon)))  
       END DO
       RHS(i,1,k,ipcon)=RHS(i,1,k,ipcon)+(1._rprec/dy**2)*(((Kc_t(i,1,k)+Kc_t(i,2,k))/2._rprec)*(scalar(i,2,k,ipcon)-scalar(i,1,k,ipcon)) &
 	                                     -((Kc_t(i,1,k)+Kc_t(i,ny,k))/2._rprec)*(scalar(i,1,k,ipcon)-ghost_y0(i,k)))
@@ -4464,7 +4467,7 @@ endif
 
 
 1000 continue
-RHS = RHS + RHS_pbe_in
+!RHS = RHS + RHS_pbe_in ! case with no breakup, so commented out
 
 END SUBROUTINE pollen_RHS_calc2
 

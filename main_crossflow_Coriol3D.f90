@@ -168,9 +168,6 @@ ran_num = 2*ran_num-1;
 
 tt=0
 
-
-call sim_param_init()
-
 !--Initialize surface boundary conditions
   call patch_or_remote ()
 

@@ -49,7 +49,7 @@ if(initu)then
    
    if(S_FLAG.and.PCon_FLAG) then
   !    write(fname,'(A,I6.6,A,I4.4,A)') path//'restart/vel_sc_pcon_',3000,'_',2000+coord,'.out'
-  write(fname,'(A,A,I4.4,A)')path//'restart/vel_pcon_0000040','_',2000+coord,'.out'
+  write(fname,'(A,A,I4.4,A)')path//'restart/vel_pcon_0225000','_',2000+coord,'.out'
    else if(S_FLAG) then
       write(fname,'(A,I4.4,A)') path//'restart/vel_sc_',2000+coord,'.out'
    else if(PCon_FLAG) then
@@ -90,7 +90,7 @@ if(initu)then
 
    !DY Save initial mean profiles for fringe zone
    if(S_FLAG) then
-   write(fname,'(A,A,I4.4,A)') path//'restart/fringe_vel_sc_0000040','_',2000+coord,'.out'
+   write(fname,'(A,A,I4.4,A)') path//'restart/fringe_vel_sc_0225000','_',2000+coord,'.out'
    else
       write(fname,'(A,I4.4,A)') path//'restart/fringe_vel_',2000+coord,'.out'
    endif

@@ -52,6 +52,7 @@ type tavg_t
     real(rprec) :: txx, tyy, tzz, txy, txz, tyz
     real(rprec) :: u2, v2, w2, uv, uw, vw, fx, fy, fz
      real(rprec) :: dudx, dudy, dudz, dvdx, dvdy, dvdz, dwdx, dwdy, dwdz
+     real(rprec) :: tot_pc, tot_pc2
 end type tavg_t
 
 $if ($PPCON)
@@ -60,6 +61,18 @@ type tavg_pcon_t
         real(rprec) :: pcon2
 end type tavg_pcon_t
 
+type tavg_nudpcon_t
+        real(rprec) :: nudpcondx
+        real(rprec) :: nudpcondy
+end type tavg_nudpcon_t
+
+
+
+!type tavg_nudC_t
+!        real(rprec) :: nudCdx
+!        real(rprec) :: nudCdy
+!end type tavg_nudC_t
+
 type rs_pcon_t
         real(rprec) :: pconp2
 end type rs_pcon_t
@@ -67,7 +80,7 @@ end type rs_pcon_t
 $endif
 
 type rs_t
-    real(rprec) :: up2, vp2, wp2, upvp, upwp, vpwp
+    real(rprec) :: up2, vp2, wp2, upvp, upwp, vpwp,pc2t
 end type rs_t
 
 $if ($PPSGS) 
@@ -118,6 +131,8 @@ type(tavg_t), allocatable, dimension(:) :: tavg_zplane
 
 $if ($PPCON)
 type(tavg_pcon_t), allocatable, dimension (:,:,:,:) :: tavg_pcon
+type(tavg_nudpcon_t), allocatable, dimension (:,:,:,:) :: tavg_nudpcon
+!type(tavg_nudC_t), allocatable, dimension (:,:,:) :: tavg_nudC
 type(rs_pcon_t), allocatable, dimension (:,:,:,:) :: rs_pcon
 $endif
 
@@ -172,7 +187,7 @@ c % upvp = a % uv - a % u * a % v
 !! stresses are on the same grid as the squared velocities (i.e., w-grid)
 c % upwp = a % uw - a % u_w * a % w   !!pj
 c % vpwp = a % vw - a % v_w * a % w   !!pj
-
+c % pc2t  = a % tot_pc2 - a % tot_pc * a % tot_pc 
 end function rs_compute
 
 $if ($PPCON)

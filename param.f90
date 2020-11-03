@@ -67,7 +67,7 @@ real (rprec), parameter :: TINYS = 1.e-30_rprec
 real(rprec),parameter::pi=3.1415926535897932384626433_rprec
 real(kind=rprec),parameter::L_x=1_rprec,L_y=1_rprec
 !real(kind=rprec),parameter::L_x=10._rprec,L_y=5._rprec
-real(rprec),parameter::z_i=1._rprec, L_z=2.5_rprec/nproc
+real(rprec),parameter::z_i=1._rprec, L_z=1.5_rprec/nproc
                             !--L_z is not nondimensionalized by z_i yet
 ! set the aspect ratio of the box, already nondimensional
 real(rprec),parameter::dz=L_z/z_i/(nz-1)
@@ -77,7 +77,7 @@ real(rprec),parameter::dx=L_x/nx,dy=L_y/ny
 !                3 hours = 108000 steps
 
 !!!!!!!! Changed by AA
-integer,parameter::nsteps=11000 !simulation steps
+integer,parameter::nsteps=70000 !simulation steps
 !!!!!!! Ends Here
 
 !integer,parameter::nsteps=40000 !simulation steps
@@ -97,7 +97,7 @@ real(rprec),parameter :: u_star =1._rprec,Pr = 0.4_rprec
 !real(rprec),parameter::u_star=sqrt(ug_dim**2+vg_dim**2),Pr=.4_rprec
 
 !!!!!!! Changed by AA
-real(rprec),parameter::dt_dim=0.00005_rprec !dimensional time step in seconds
+real(rprec),parameter::dt_dim=0.0001_rprec !dimensional time step in seconds
 !!!!!!! Ends here
 
 !real(rprec),parameter::dt_dim=0.2_rprec
@@ -142,7 +142,7 @@ integer, parameter :: video_end=600000
 integer, parameter :: video_freq=1000
 
 ! nu_molec is dimensional m^2/s
-real(rprec),parameter::nu_molec=1.14e-5_rprec
+real(rprec),parameter::nu_molec=1.e-6_rprec
 
 logical,parameter::use_bldg=.false.
 logical,parameter::molec=.false.,sgs=.true.,dns_bc=.false.
@@ -299,8 +299,10 @@ integer,parameter :: checkpoint_nskip = 4000
 
 character(*), parameter :: checkpoint_tavg_file = path//'tavg.out'
 character(*), parameter :: checkpoint_tavg_pcon_file = path//'tavg_pcon.out'
+character(*), parameter :: checkpoint_tavg_nudpcon_file = path//'tavg_nudpcon.out'
+character(*), parameter :: checkpoint_tavg_sgs_file = path//'tavg_sgs.out'
 logical :: tavg_calc = .true.
-integer,parameter :: tavg_nstart = 100000 , tavg_nend = 5000000, tavg_nskip =300
+integer,parameter :: tavg_nstart = 159000 , tavg_nend = 5000000, tavg_nskip =300
 
 
 !------xxxxxxxxx--POLLEN_PARAMETERS--xxxxxxxxx---------------
@@ -338,7 +340,7 @@ logical,parameter :: periodicbcy=.false.
 
 
 ! Time step to start evolving pollen concentration field
-integer,parameter :: PCon_init=40000
+integer,parameter :: PCon_init=60000
 
 ! Flag to specify bottom bounday condition
 ! lbcp=0  - prescribed surface pollen concentration
@@ -380,7 +382,7 @@ real(kind=rprec),parameter :: z_ref=100._rprec
 logical,parameter :: settling=.TRUE.
 
 ! Number of droplet/bubble sizes
-integer,parameter :: npcon=20
+integer,parameter :: npcon=10
 !AA Change npcon to add more drops
 !integer,parameter :: npcon=11
 !AA Change ends here
@@ -389,12 +391,12 @@ integer,parameter :: npcon=20
 !AA Droplet parameters defined here. Number of droplet bins has been already
 !defined by npcon
 
-real (rprec), parameter :: sigma=7.75e-3_rprec, dmin=14e-6_rprec, dmax=3000e-6_rprec, d_min=1e-7_rprec,&
-                           rho_c=854._rprec,nu_c=1e-6_rprec,mu_ratio=5._rprec,k_b=0.2_rprec,nu_d=5.85e-6_rprec
-!real (rprec), parameter ::d_diameter=(dmax-dmin)/(npcon-2._rprec)
-real (rprec), parameter :: ratio = 1._rprec/(npcon-1._rprec)
-real (rprec) , parameter :: d_diameter=(dmax/dmin)**ratio
-REAL(KIND=RPREC),parameter :: C1=18500
+real (rprec), parameter :: sigma=15.5e-3_rprec, dmin=50e-6_rprec, dmax=1000e-6_rprec, d_min=1e-7_rprec,&
+                           rho_c=850._rprec,nu_c=1e-6_rprec,mu_ratio=5._rprec,k_b=0.2_rprec,nu_d=5.85e-6_rprec
+real (rprec), parameter ::d_diameter=(dmax-dmin)/(npcon-1._rprec)
+!real (rprec), parameter :: ratio = 1._rprec/(npcon-1._rprec)
+!real (rprec) , parameter :: d_diameter=(dmax/dmin)**ratio
+REAL(KIND=RPREC),parameter :: C1=2400
 integer,parameter :: jt_rand =2
 !AA End Here
 
@@ -452,7 +454,7 @@ integer,parameter :: yps=ny/2
 !integer,parameter :: yps=ny/2
 
 !integer,parameter :: zps=70
-integer,parameter :: zps=329
+integer,parameter :: zps=349
 ! Source strength in grains/m3 per second
 real(kind=rprec),dimension(npcon) ::  Q_src 
 
@@ -462,7 +464,7 @@ real(kind=rprec),dimension(npcon) ::  Q_src
 
 !AA Change ends here
 ! timesteps to begin and end point source
-integer,parameter :: ini_src=40000
+integer,parameter :: ini_src=60000
 integer,parameter :: end_src=12000000
 
 
@@ -592,7 +594,7 @@ integer,parameter :: N_GAU = 10._rprec
 !DY For super Gaussian: N_GAU has large velue, e.g. N_GAU = 10
 
 !AA Add flag for solving population balance equations
-logical,parameter :: PBE_FLAG=.true.
+logical,parameter :: PBE_FLAG=.false.
 logical,parameter :: JET = .true.
 
 ! Set time step till which random forcing is applied.
@@ -651,20 +653,20 @@ implicit none
   integer :: ip
   real(rprec) :: temp_qsrc
   real(rprec) :: flow_rate
-  flow_rate = 5._rprec/60*1.e-3_rprec
+  flow_rate = 1._rprec/60*1.e-3_rprec
   temp_qsrc=0._rprec
   diameter(1)=dmin
   diameter(npcon) = dmax
   !  diameter (npcon) = d_min ! npcon is the location of bubble
   do ip=2,npcon-1
-    !    diameter(ipcon) = dmin + (ipcon-1)*d_diameter
-    diameter(ip) = dmin*d_diameter**(ip-1)
+        diameter(ip) = dmin + (ip-1)*d_diameter
+!    diameter(ip) = dmin*d_diameter**(ip-1)
   enddo
   V_pcon = pi/6*diameter**3
-  densratio_pcon = rho_c/1018.3_rprec 
+  densratio_pcon = rho_c/1028.3_rprec 
 
-  open(21,file="vel_sintef.dat",ACTION= "read")
-  open(20,file="n_init_for_LES_flux.txt",ACTION= "read")
+  open(21,file="vel_dispersion.dat",ACTION= "read")
+  open(20,file="n_init_LES_flux.txt",ACTION= "read")
   do ip=1,npcon
     read(20,*) temp_qsrc
     read(21,*)settling_vel(ip)
